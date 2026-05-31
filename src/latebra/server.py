@@ -7,22 +7,35 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
+
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 import mcp.server.stdio
 
-from latebra.pipeline import SmartScrapePipeline
+from latebra.pipeline import SmartScrapePipeline, ScrapeResult
 
 logger = logging.getLogger("latebra")
 
 
-async def serve() -> None:
-    """Run the MCP server with latebra tools."""
-    server = Server("latebra")
-    pipeline = SmartScrapePipeline()
+class LatebraServer:
+    """MCP-compatible server for latebra anti-bot scraping."""
 
-    @server.list_tools()
-    async def list_tools() -> list:
+    def __init__(
+        self,
+        proxies: list[str] | None = None,
+        two_captcha_key: str | None = None,
+        capsolver_key: str | None = None,
+    ) -> None:
+        self.pipeline = SmartScrapePipeline(
+            proxies=proxies,
+            two_captcha_key=two_captcha_key,
+            capsolver_key=capsolver_key,
+        )
+
+    @property
+    def tool_definitions(self) -> list[dict[str, Any]]:
+        """Return MCP tool definitions."""
         return [
             {
                 "name": "latebra_scrape",
@@ -65,40 +78,73 @@ async def serve() -> None:
                         "url": {
                             "type": "string",
                             "description": "URL to test against (e.g., https://browserscan.net)",
+                            "default": "https://httpbin.org/headers",
                         },
                     },
-                    "required": ["url"],
                 },
             },
         ]
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> list:
+    async def handle_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Handle a tool call and return MCP-formatted result."""
         if name == "latebra_scrape":
-            result = await pipeline.scrape(arguments["url"])
-            return [{"type": "text", "text": json.dumps(result.to_dict(), indent=2, ensure_ascii=False)}]
+            result = await self.pipeline.scrape(arguments["url"])
+            return self._format_result(result)
         elif name == "latebra_scrape_with_browser":
-            result = await pipeline.scrape_with_browser(
+            result = await self.pipeline.scrape_with_browser(
                 arguments["url"],
                 browser=arguments.get("browser", "patchright"),
             )
-            return [{"type": "text", "text": json.dumps(result.to_dict(), indent=2, ensure_ascii=False)}]
+            return self._format_result(result)
         elif name == "latebra_check_anonymity":
-            result = await pipeline.check_anonymity(arguments["url"])
-            return [{"type": "text", "text": json.dumps(result.to_dict(), indent=2, ensure_ascii=False)}]
+            url = arguments.get("url", "https://httpbin.org/headers")
+            result = await self.pipeline.check_anonymity(url)
+            if hasattr(result, "to_dict"):
+                return result.to_dict()  # type: ignore
+            return result  # type: ignore
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    def _format_result(self, result: ScrapeResult) -> dict[str, Any]:
+        """Format ScrapeResult for JSON response."""
+        base = result.to_dict()
+        base["content_preview"] = (
+            result.content[:500] + "..." if result.content and len(result.content) > 500
+            else result.content or ""
+        )
+        return base
+
+
+async def serve() -> None:
+    """Run the MCP server with latebra tools."""
+    mcp_server = Server("latebra")
+    latebra = LatebraServer()
+
+    @mcp_server.list_tools()
+    async def list_tools() -> list:
+        return latebra.tool_definitions
+
+    @mcp_server.call_tool()
+    async def call_tool(name: str, arguments: dict) -> list:
+        result = await latebra.handle_tool(name, arguments)
+        return [{"type": "text", "text": json.dumps(result, indent=2, ensure_ascii=False)}]
+
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await server.run(
+        await mcp_server.run(
             read_stream,
             write_stream,
             InitializationOptions(
                 server_name="latebra",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
+                server_version="0.2.0",
+                capabilities=mcp_server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
                 ),
             ),
         )
+
+
+if __name__ == "__main__":
+    import asyncio
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(serve())

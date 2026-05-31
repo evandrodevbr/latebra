@@ -1,15 +1,35 @@
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.env
-.venv/
-venv/
 *.egg-info/
 dist/
 build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / Coverage
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.log
-.cache/
+htmlcov/
+*.coverage
+.coverage
+
+# Cache
+~/.cache/latebra/
+
+# Environment
+.env
+.env.local

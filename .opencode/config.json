@@ -1,0 +1,11 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "agent": {
+    "build": {
+      "model": "opencode-go/deepseek-v4-flash"
+    },
+    "plan": {
+      "model": "opencode-go/deepseek-v4-flash"
+    }
+  }
+}

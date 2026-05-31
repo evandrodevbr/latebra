@@ -1,28 +1,60 @@
-"""Tests for the MCP server tools."""
+"""Tests for the MCP server."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import json
 
 import pytest
 
-from latebra.server import serve
+from latebra.server import LatebraServer
 
 
-@pytest.mark.asyncio
-async def test_server_creates_tools() -> None:
-    """Server should initialize with the correct tool list."""
-    # We can't easily test the full MCP server without transport,
-    # but we can test the tool definitions via the initialization pattern.
-    server_impl = __import__("latebra.server", fromlist=["serve"])
+class TestLatebraServer:
+    """Test the LatebraServer tool definitions and formatting."""
 
-    # Verify the serve function exists and is async
-    assert callable(server_impl.serve)
+    def test_init(self):
+        server = LatebraServer()
+        assert server.pipeline is not None
 
-    # Test the module-level components
-    from latebra.server import call_tool
+    def test_init_with_options(self):
+        server = LatebraServer(
+            proxies=["http://proxy1:8080"],
+            two_captcha_key="test_2captcha",
+        )
+        assert server.pipeline is not None
 
-    # The call_tool should raise ValueError for unknown tools
-    with pytest.raises(ValueError, match="unknown_tool"):
-        # We can't call the decorator directly, but we verify it exists
-        pass
+    def test_tool_definitions_three_tools(self):
+        server = LatebraServer()
+        tools = server.tool_definitions
+        assert len(tools) == 3
+
+    def test_tool_definitions_names(self):
+        server = LatebraServer()
+        names = [t["name"] for t in server.tool_definitions]
+        assert "latebra_scrape" in names
+        assert "latebra_scrape_with_browser" in names
+        assert "latebra_check_anonymity" in names
+
+    def test_handle_unknown_tool(self):
+        import pytest
+        server = LatebraServer()
+        with pytest.raises(ValueError, match="Unknown tool"):
+            import asyncio
+            asyncio.run(server.handle_tool("unknown_tool", {}))
+
+    def test_format_result_with_content(self):
+        from latebra.pipeline import ScrapeResult
+        server = LatebraServer()
+        result = ScrapeResult(
+            url="http://example.com",
+            status="success",
+            content="<html>" + "x" * 1000,
+            content_length=1000,
+            layer_used="request",
+            title="Test",
+        )
+        formatted = server._format_result(result)
+        assert formatted["url"] == "http://example.com"
+        assert formatted["status"] == "success"
+        assert formatted["content_preview"].endswith("...")
+        assert formatted["title"] == "Test"
