@@ -131,6 +131,32 @@ class ProxyManager:
                 results["banned"] += 1
         return results
 
+    async def health_check_all(self) -> list[dict]:
+        """Validate all proxies concurrently and return per-proxy results.
+
+        Returns list of dicts with 'url', 'healthy', 'error' keys.
+        Proxies that fail validation are marked via report_failure.
+        """
+        async def _check_one(entry: ProxyEntry) -> dict:
+            try:
+                from latebra.layers.request import AsyncRequestLayer
+                layer = AsyncRequestLayer(timeout=5, max_retries=0)
+                result = await layer.fetch(self.health_check_url, proxy=entry.url)
+                if result.status == 200:
+                    await self.report_success(entry.url)
+                    return {"url": entry.url, "healthy": True, "error": None}
+                else:
+                    await self.report_failure(entry.url)
+                    return {"url": entry.url, "healthy": False, "error": f"HTTP {result.status}"}
+            except Exception as e:
+                await self.report_failure(entry.url)
+                return {"url": entry.url, "healthy": False, "error": str(e)}
+
+        if not self._entries:
+            return []
+        tasks = [_check_one(e) for e in self._entries]
+        return await asyncio.gather(*tasks)
+
     async def start_background_health_checks(self, interval: int = 300) -> None:
         """Start periodic health checks in background."""
 

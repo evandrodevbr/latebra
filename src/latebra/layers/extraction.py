@@ -46,7 +46,13 @@ class ContentCache:
     @property
     def _conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(self.db_path)
+            self._local.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            # Performance PRAGMAs
+            self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA synchronous=NORMAL")
+            self._local.conn.execute("PRAGMA cache_size=-8000")  # 8MB
+            self._local.conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+            self._local.conn.execute("PRAGMA busy_timeout=5000")
             self._local.conn.execute("""
                 CREATE TABLE IF NOT EXISTS cache (
                     key TEXT PRIMARY KEY,
@@ -55,6 +61,9 @@ class ContentCache:
                     ttl_seconds INTEGER NOT NULL DEFAULT 3600
                 )
             """)
+            self._local.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cache_created_at ON cache(created_at)"
+            )
             self._local.conn.commit()
         return self._local.conn
 

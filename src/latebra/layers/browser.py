@@ -38,8 +38,17 @@ class AsyncBrowserLayer:
     LOCALES = LOCALES
     TIMEZONES = TIMEZONES
 
+    _STEALTH_SCRIPT = (
+        'Object.defineProperty(navigator, "webdriver", { get: () => undefined });'
+        'Object.defineProperty(navigator, "plugins", { get: () => [1,2,3] });'
+        'window.chrome = { runtime: {} };'
+    )
+
     def __init__(self, stealth: bool = True):
         self.stealth = stealth
+        self._warm_browser = None
+        self._warm_context = None
+        self._warm_engine: str | None = None
 
     def _random_viewport(self) -> tuple[int, int]:
         return random.choice(self.VIEWPORTS)
@@ -86,8 +95,58 @@ class AsyncBrowserLayer:
         result.timing_ms = (asyncio.get_event_loop().time() - start) * 1000
         return result
 
+    async def warm_up(self, engine: str = "patchright") -> None:
+        """Pre-launch a browser instance for faster subsequent scrapes.
+
+        Keeps the browser + context alive between calls.  Call warm_down()
+        when done to release resources.
+        """
+        if engine == "patchright":
+            from patchright.async_api import async_playwright
+            self._warm_playwright = await async_playwright().__aenter__()
+            self._warm_browser = await self._warm_playwright.chromium.launch(
+                headless=True
+            )
+            viewport = self._random_viewport()
+            self._warm_context = await self._warm_browser.new_context(
+                viewport={"width": viewport[0], "height": viewport[1]},
+                locale=self._random_locale(),
+                timezone_id=self._random_timezone(),
+                user_agent=self._random_user_agent(),
+            )
+            self._warm_engine = engine
+            logger.info("Browser warm pool ready (engine=%s)", engine)
+        else:
+            logger.warning("warm_up only supports patchright, got %s", engine)
+
+    async def warm_down(self) -> None:
+        """Close the warm browser pool and release resources."""
+        if self._warm_context:
+            await self._warm_context.close()
+            self._warm_context = None
+        if self._warm_browser:
+            await self._warm_browser.close()
+            self._warm_browser = None
+        if hasattr(self, "_warm_playwright") and self._warm_playwright:
+            await self._warm_playwright.__aexit__(None, None, None)
+            self._warm_playwright = None
+        self._warm_engine = None
+        logger.info("Browser warm pool shut down")
+
     async def _scrape_patchright(self, url: str, result: BrowserResult) -> None:
         try:
+            # Use warm pool if available — reuses browser + context
+            if self._warm_browser and self._warm_context and self._warm_engine == "patchright":
+                page = await self._warm_context.new_page()
+                if self.stealth:
+                    await page.add_init_script(self._STEALTH_SCRIPT)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(random.randint(1000, 3000))
+                result.html = await page.content()
+                await page.close()
+                return
+
+            # Cold launch
             from patchright.async_api import async_playwright
             async with async_playwright() as p:
                 viewport = self._random_viewport()
@@ -101,11 +160,7 @@ class AsyncBrowserLayer:
                 page = await context.new_page()
 
                 if self.stealth:
-                    await page.add_init_script("""
-                        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-                        Object.defineProperty(navigator, "plugins", { get: () => [1,2,3] });
-                        window.chrome = { runtime: {} };
-                    """)
+                    await page.add_init_script(self._STEALTH_SCRIPT)
 
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(random.randint(1000, 3000))

@@ -29,7 +29,7 @@ class AsyncRequestLayer:
 
     def __init__(
         self,
-        timeout: int = 30,
+        timeout: int = 15,
         max_retries: int = 2,
         impersonate: str = "chrome120",
     ):

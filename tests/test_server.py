@@ -26,7 +26,7 @@ class TestLatebraServer:
     def test_tool_definitions_three_tools(self):
         server = LatebraServer()
         tools = server.tool_definitions
-        assert len(tools) == 3
+        assert len(tools) == 7  # scrape, scrape_browser, anonymity, search, crawl, batch, interact
 
     def test_tool_definitions_names(self):
         server = LatebraServer()

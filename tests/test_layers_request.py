@@ -25,7 +25,7 @@ class TestAsyncRequestLayer:
 
     def test_init_default(self):
         layer = AsyncRequestLayer()
-        assert layer.timeout == 30
+        assert layer.timeout == 15
         assert layer.max_retries == 2
         assert layer.impersonate == "chrome120"
 

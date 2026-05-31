@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -48,12 +49,23 @@ _TERMINAL_ERROR_PATTERNS: list[str] = [
     "nodename nor servname",
 ]
 
+# Pre-compiled regex for O(1) pattern matching instead of O(n*m) loop
+_TERMINAL_ERROR_RE = re.compile(
+    "|".join(re.escape(p) for p in _TERMINAL_ERROR_PATTERNS),
+    re.IGNORECASE,
+)
+
+_MARKER_RE = re.compile(
+    "|".join(re.escape(m) for m in DETECTION_MARKERS),
+    re.IGNORECASE,
+)
+
 
 def _is_terminal_error(error: str | None) -> bool:
     """Check if an error is terminal (unrecoverable across all layers)."""
     if not error:
         return False
-    return any(pattern.lower() in error.lower() for pattern in _TERMINAL_ERROR_PATTERNS)
+    return bool(_TERMINAL_ERROR_RE.search(error))
 
 
 @dataclass
@@ -89,6 +101,10 @@ class ScrapeResult:
 
 class SmartScrapePipeline:
     """Orchestrates the multi-layer anti-bot evasion pipeline."""
+
+    # When True, browser engines race simultaneously.
+    # When False (default), they fallback serially (patchright → camoufox → nodriver).
+    PARALLEL_FALLBACK: bool = False
 
     def __init__(
         self,
@@ -164,15 +180,36 @@ class SmartScrapePipeline:
         # Layer 2: Browser engines (Patchright → Camoufox → nodriver)
         browsers = ["patchright", "camoufox", "nodriver"]
         browser_error: str | None = None
-        for engine in browsers:
-            browser_result = await self.browser_layer.scrape(url, engine=engine)
-            if browser_result.status == 200 and browser_result.html:
-                result = await self._build_success_result(
-                    url, browser_result.html, f"browser_{engine}", start
+
+        if self.PARALLEL_FALLBACK:
+            # Race all browser engines simultaneously — first to succeed wins
+            tasks = [
+                asyncio.ensure_future(
+                    self.browser_layer.scrape(url, engine=engine)
                 )
-                result.proxies_rotated = proxy_rotations
-                return result
-            browser_error = browser_result.error
+                for engine in browsers
+            ]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                browser_result = task.result()
+                if browser_result.status == 200 and browser_result.html:
+                    result = await self._build_success_result(
+                        url, browser_result.html,
+                        f"browser_{browser_result.engine}", start
+                    )
+                    result.proxies_rotated = proxy_rotations
+                    return result
+                browser_error = browser_result.error
+        else:
+            for engine in browsers:
+                browser_result = await self.browser_layer.scrape(url, engine=engine)
+                if browser_result.status == 200 and browser_result.html:
+                    result = await self._build_success_result(
+                        url, browser_result.html, f"browser_{engine}", start
+                    )
+                    result.proxies_rotated = proxy_rotations
+                    return result
+                browser_error = browser_result.error
 
         timing_ms = (time.monotonic() - start) * 1000
         # Preserve request layer error — it's more informative than browser errors
@@ -215,11 +252,11 @@ class SmartScrapePipeline:
             "error": result.error,
             "timing_ms": round((time.monotonic() - start) * 1000, 2),
         }
-        # Check for bot detection markers
+        # Check for bot detection markers using compiled regex
         if result.content:
-            for marker in DETECTION_MARKERS:
-                if marker.lower() in result.content.lower():
-                    detection_info[f"detected_{marker}"] = True
+            found = _MARKER_RE.findall(result.content)
+            for marker in found:
+                detection_info[f"detected_{marker}"] = True
         return detection_info
 
     async def scrape_with_captcha(
@@ -254,3 +291,26 @@ class SmartScrapePipeline:
                     result.content = req_result.content
                     result.content_length = len(req_result.content)
         return result
+
+    async def batch_scrape(
+        self,
+        urls: list[str],
+        max_concurrent: int = 5,
+    ) -> list[ScrapeResult]:
+        """Scrape multiple URLs concurrently with a concurrency limit.
+
+        Args:
+            urls: List of URLs to scrape
+            max_concurrent: Maximum simultaneous requests
+
+        Returns:
+            List of ScrapeResult in the same order as input URLs
+        """
+        sem = asyncio.Semaphore(max_concurrent)
+
+        async def _scrape_one(url: str) -> ScrapeResult:
+            async with sem:
+                return await self.scrape(url)
+
+        tasks = [_scrape_one(u) for u in urls]
+        return await asyncio.gather(*tasks)
