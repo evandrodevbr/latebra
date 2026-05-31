@@ -72,8 +72,15 @@ class TestAsyncExtractionLayer:
         assert layer.cache is None
 
     @pytest.mark.asyncio
-    async def test_extract_fallback(self, sample_html):
+    async def test_extract_fallback(self, sample_html, monkeypatch):
         """Test fallback extraction without Crawl4AI."""
+        # Force fallback by making Crawl4AI import raise ImportError
+        async def _raise_import_error(*args, **kwargs):
+            raise ImportError("crawl4ai not available")
+        monkeypatch.setattr(
+            "latebra.layers.extraction.AsyncExtractionLayer._extract_crawl4ai",
+            _raise_import_error,
+        )
         layer = AsyncExtractionLayer(use_cache=False)
         result = await layer.extract(sample_html, "http://example.com")
         assert "Test Page" in result.title
@@ -81,7 +88,13 @@ class TestAsyncExtractionLayer:
         assert len(result.links) == 2
 
     @pytest.mark.asyncio
-    async def test_extract_fallback_no_title(self, blocked_html):
+    async def test_extract_fallback_no_title(self, blocked_html, monkeypatch):
+        async def _raise_import_error(*args, **kwargs):
+            raise ImportError("crawl4ai not available")
+        monkeypatch.setattr(
+            "latebra.layers.extraction.AsyncExtractionLayer._extract_crawl4ai",
+            _raise_import_error,
+        )
         layer = AsyncExtractionLayer(use_cache=False)
         result = await layer.extract(blocked_html, "http://example.com")
         assert result.title == "Blocked"

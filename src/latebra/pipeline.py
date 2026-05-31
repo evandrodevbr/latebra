@@ -25,8 +25,35 @@ from latebra.layers.browser import AsyncBrowserLayer
 from latebra.layers.extraction import AsyncExtractionLayer
 from latebra.layers.request import AsyncRequestLayer
 from latebra.proxy.manager import ProxyManager
+from latebra.validation import validate
 
 logger = logging.getLogger(__name__)
+
+# Terminal network errors that cannot be recovered by any layer
+_TERMINAL_ERROR_PATTERNS: list[str] = [
+    "ERR_NAME_NOT_RESOLVED",
+    "Could not resolve host",
+    "ERR_CONNECTION_REFUSED",
+    "Connection refused",
+    "ERR_ADDRESS_UNREACHABLE",
+    "ERR_ADDRESS_INVALID",
+    "No route to host",
+    "getaddrinfo",
+    "Name or service not known",
+    "ERR_CONNECTION_CLOSED",
+    "ERR_CONNECTION_RESET",
+    "Connection reset",
+    "Temporary failure in name resolution",
+    "No address associated with hostname",
+    "nodename nor servname",
+]
+
+
+def _is_terminal_error(error: str | None) -> bool:
+    """Check if an error is terminal (unrecoverable across all layers)."""
+    if not error:
+        return False
+    return any(pattern.lower() in error.lower() for pattern in _TERMINAL_ERROR_PATTERNS)
 
 
 @dataclass
@@ -101,6 +128,9 @@ class SmartScrapePipeline:
         Smart scrape: try http first, fallback to browser layers.
         Implements the decision pipeline from the anti-bot spec.
         """
+        # Validate URL before any network call
+        validate(url)
+
         start = time.monotonic()
         proxy_rotations = 0
 
@@ -120,9 +150,20 @@ class SmartScrapePipeline:
             await self.proxy_manager.report_failure(proxy)
             proxy_rotations += 1
 
+        # Early exit: terminal network errors skip browser fallback
+        if _is_terminal_error(req_result.error):
+            timing_ms = (time.monotonic() - start) * 1000
+            return ScrapeResult(
+                url=url,
+                status="error",
+                error=req_result.error or "Terminal network error",
+                timing_ms=timing_ms,
+                proxies_rotated=proxy_rotations,
+            )
+
         # Layer 2: Browser engines (Patchright → Camoufox → nodriver)
         browsers = ["patchright", "camoufox", "nodriver"]
-        last_error = None
+        browser_error: str | None = None
         for engine in browsers:
             browser_result = await self.browser_layer.scrape(url, engine=engine)
             if browser_result.status == 200 and browser_result.html:
@@ -131,13 +172,14 @@ class SmartScrapePipeline:
                 )
                 result.proxies_rotated = proxy_rotations
                 return result
-            last_error = browser_result.error
+            browser_error = browser_result.error
 
         timing_ms = (time.monotonic() - start) * 1000
+        # Preserve request layer error — it's more informative than browser errors
         return ScrapeResult(
             url=url,
             status="error",
-            error=last_error or req_result.error or "All layers failed",
+            error=req_result.error or browser_error or "All layers failed",
             timing_ms=timing_ms,
             proxies_rotated=proxy_rotations,
         )
@@ -148,6 +190,7 @@ class SmartScrapePipeline:
         browser: str = "patchright",
     ) -> ScrapeResult:
         """Force browser mode for JS-heavy pages."""
+        validate(url)
         start = time.monotonic()
         browser_result = await self.browser_layer.scrape(url, engine=browser)
         if browser_result.status == 200 and browser_result.html:

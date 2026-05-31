@@ -54,31 +54,34 @@ class AsyncBrowserLayer:
         return random.choice(USER_AGENTS)
 
     async def scrape(self, url: str, engine: str = "patchright") -> BrowserResult:
-        """Scrape URL with browser, falling back through engine chain on failure."""
+        """Scrape URL with the specified browser engine only.
+
+        No internal fallback — pipeline manages fallback across engines.
+        """
         result = BrowserResult()
         result.url = url
         start = asyncio.get_event_loop().time()
 
-        engines_to_try = self.ENGINES[self.ENGINES.index(engine):] if engine in self.ENGINES else self.ENGINES
+        if engine not in self.ENGINES:
+            result.error = f"Unknown engine: {engine}"
+            result.timing_ms = (asyncio.get_event_loop().time() - start) * 1000
+            return result
 
-        for eng in engines_to_try:
-            try:
-                result.engine = eng
-                if eng == "patchright":
-                    await self._scrape_patchright(url, result)
-                elif eng == "camoufox":
-                    await self._scrape_camoufox(url, result)
-                elif eng == "nodriver":
-                    await self._scrape_nodriver(url, result)
+        try:
+            result.engine = engine
+            if engine == "patchright":
+                await self._scrape_patchright(url, result)
+            elif engine == "camoufox":
+                await self._scrape_camoufox(url, result)
+            elif engine == "nodriver":
+                await self._scrape_nodriver(url, result)
 
-                if result.html:
-                    result.status = 200
-                    break
+            if result.html:
+                result.status = 200
 
-            except Exception as e:
-                logger.warning("Browser engine %s failed: %s", eng, e)
-                result.error = str(e)
-                continue
+        except Exception as e:
+            logger.warning("Browser engine %s failed: %s", engine, e)
+            result.error = str(e)
 
         result.timing_ms = (asyncio.get_event_loop().time() - start) * 1000
         return result
@@ -113,8 +116,8 @@ class AsyncBrowserLayer:
 
     async def _scrape_camoufox(self, url: str, result: BrowserResult) -> None:
         try:
-            from camoufox import Camoufox
-            async with Camoufox(headless=True) as browser:
+            from camoufox import AsyncCamoufox
+            async with AsyncCamoufox(headless=True) as browser:
                 page = await browser.new_page()
                 await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(random.randint(1000, 2000))
@@ -125,11 +128,11 @@ class AsyncBrowserLayer:
     async def _scrape_nodriver(self, url: str, result: BrowserResult) -> None:
         try:
             import nodriver as nd
-            browser = await nd.start()
+            browser = await nd.start(headless=True)
             page = await browser.get(url)
-            await page.wait_for(nd.By.TAG_NAME, "body", timeout=15)
-            await asyncio.sleep(random.uniform(1, 2))
-            result.html = await page.content()
+            await page.wait_for("body", timeout=15)
+            await browser.sleep(random.uniform(1, 2))
+            result.html = await page.get_content()
             browser.stop()
         except ImportError:
             raise
