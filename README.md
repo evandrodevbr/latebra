@@ -1,58 +1,108 @@
 # latebra 🕵️‍♂️
 
-**MCP anti-bot web scraping com máxima anonimidade.**
+**MCP server para anti-bot web scraping anônimo.**
 
-Pipeline multi-camadas que evita detecção combinando TLS fingerprinting, browser stealth, simulação comportamental e proxy rotation.
+Pipeline multi-camadas que combina TLS fingerprinting, browser stealth com simulação comportamental, proxy rotation e resolução de CAPTCHAs — tudo exposto como ferramentas MCP para agents (Claude, Hermes, etc.).
 
 ## Pipeline
 
 ```
-curl_cffi (HTTP) → Patchright (Browser) → Camoufox (Firefox) → [CAPTCHA solver] → [Proxy rotation]
+Request (curl_cffi) → Browser (Playwright + Stealth) → Extraction (Crawl4AI / fallback)
+                        ↓                              ↓
+                 ProxyManager                    ContentCache (SQLite TTL)
+                 CaptchaSolver
+```
+
+## Arquitetura
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      latebra MCP Server                       │
+├──────────────────────────────────────────────────────────────┤
+│  ScrapeResult ← SmartScrapePipeline ← MCP tools              │
+│                                                              │
+│  Layer 1: request.py         curl_cffi + TLS impersonation   │
+│  Layer 2: browser.py         Playwright + stealth init       │
+│  Layer 3: extraction.py      Crawl4AI / regex fallback       │
+│                                                              │
+│  proxy/manager.py            Rotação, health check, auto-ban │
+│  stealth/fingerprint.py      Canvas/WebGL/WebRTC spoofing    │
+│  stealth/behavior.py         Bezier curves, delays, scroll   │
+│  captcha/solver.py           2Captcha / Capsolver            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Instalação
 
 ```bash
-pip install latebra
-# ou com suporte a todos os browsers
-pip install "latebra[all]"
+git clone <repo-url> ~/latebra
+cd ~/latebra
+uv sync
+# ou: python -m venv .venv && . .venv/bin/activate && pip install -e .
 ```
+
+Dependências opcionais por funcionalidade:
+
+| Funcionalidade | Dependência | Instalação |
+|---|---|---|
+| TLS impersonation | `curl_cffi` | incluída |
+| Browser automation | `playwright` | `playwright install chromium` |
+| Extração avançada | `crawl4ai` | `pip install crawl4ai` |
+| Captcha solver | `capsolver` / `2captcha-python` | opcional |
 
 ## Uso (MCP)
 
 ```bash
+# Iniciar servidor MCP
 python -m latebra run
 ```
 
-Conecte como MCP client e use as ferramentas:
+Conecte como MCP client (Hermes Agent, Claude Code, etc.) e use as ferramentas:
 
-- `latebra_scrape` — scrape inteligente (HTTP → Browser)
-- `latebra_scrape_with_browser` — força browser
-- `latebra_check_anonymity` — testa nível de anonimidade
+| Tool | Descrição |
+|---|---|
+| `scrape` | Scrape inteligente com fallback request→browser→extraction |
+| `extract` | Extração de conteúdo de HTML já obtido |
+| `health` | Status do servidor, cache hits, estatísticas |
 
-## Arquitetura
+### Exemplo via Hermes Agent (config.yaml)
 
+```yaml
+mcp_servers:
+  latebra:
+    command: python
+    args: ["-m", "latebra", "run"]
+    workdir: ~/latebra
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    latebra MCP Server                       │
-├────────────────────────────────────────────────────────────┤
-│  Layer 1: curl_cffi  (TLS impersonation + proxies)        │
-│  Layer 2: Patchright  (CDP stealth + fingerprints)        │
-│  Layer 3: Camoufox   (Firefox stealth)                    │
-│  Layer 4: nodriver   (last resort)                        │
-│  Layer 5: Crawl4AI   (extraction + dedup)                 │
-└────────────────────────────────────────────────────────────┘
+
+### Exemplo via Python direto
+
+```python
+from latebra.pipeline import SmartScrapePipeline
+
+pipeline = SmartScrapePipeline(proxies=["http://user:pass@host:8080"])
+result = await pipeline.scrape("https://exemplo.com")
+print(result.title, result.status, result.timing_ms)
 ```
 
 ## Técnicas Implementadas
 
-- TLS Fingerprinting (JA3/JA4) via curl_cffi
-- Browser Fingerprinting (Canvas, WebGL, AudioContext) randomizado
-- JavaScript Challenges (Cloudflare, DataDome) bypass
-- Behavioral Analysis (mouse, scroll, timing simulation)
-- IP Reputation (proxy rotation)
-- CDP/DevTools Detection (flags removidas)
-- Rate Limiting e Honeypots
+- **TLS Fingerprinting** (JA3/JA4) via `curl_cffi` com impersonate de Chrome/Safari/Firefox
+- **Browser Fingerprinting randomizado** — Canvas, WebGL, AudioContext, WebRTC spoofing
+- **Stealth init script** — Remove `navigator.webdriver`, normaliza `window.chrome`, plugins, languages
+- **Comportamento humano simulado** — Curvas de Bezier para mouse, delays gaussianos para typing, scroll natural
+- **Proxy rotation** — Round-robin e aleatório, health check periódico, ban automático após N falhas
+- **Captcha solving** — 2Captcha e Capsolver (por env vars)
+- **Content cache** — SQLite com TTL, evita re-requests desnecessários
+- **Fallback automático** — request → browser → extraction, cada camada tenta antes de escalar
+
+## Variáveis de Ambiente
+
+| Variável | Descrição |
+|---|---|
+| `CAPSOLVER_API_KEY` | API key do Capsolver |
+| `TWOCAPTCHA_API_KEY` | API key do 2Captcha |
+| `PROXY_LIST` | Lista de proxies separados por vírgula |
 
 ## Licença
 
