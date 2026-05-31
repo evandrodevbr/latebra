@@ -6,6 +6,7 @@
 ## Goal
 *Define what you're building or fixing - this will be updated as requirements are gathered*
 ## Key Decisions
+- **SECURITY-AUDIT-2026-05-30**: Comprehensive OWASP Top 10 security audit completed. Report at `.review/1-security.md`. Findings: 1 Critical (unrestricted SSRF), 4 High (no URL validation, error leakage, credential logging, URL injection in CAPTCHA flow), 4 Medium, 4 Low. Overall risk: HIGH. SSRF via all MCP tools allows internal network probing and cloud metadata access. Must implement URL scheme restriction + internal IP blocking before production deployment.
 - **READ-EMOJI**: Removed 🕵️ emoji from the README.pt-BR.md title for cleaner rendering
 - **README-URL**: Fixed GitHub clone URL from `evandrofjs` to `evandrodevbr`
 - **README-SERVICES**: Added "Serviços Recomendados" section with proxy services (Webshare, IPRoyal, Bright Data, Smartproxy, Proxy-Cheap) and CAPTCHA solvers (2Captcha, Capsolver, Anti-Captcha, CapMonster, DeathByCaptcha) with links, pricing, and use-case descriptions
