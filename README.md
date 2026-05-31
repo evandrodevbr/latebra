@@ -1,109 +1,243 @@
-# latebra 🕵️‍♂️
+# latebra 🕵️
 
-**MCP server para anti-bot web scraping anônimo.**
+**MCP server anti-bot para web scraping anônimo com pipeline multi-camadas de evasão.**
 
-Pipeline multi-camadas que combina TLS fingerprinting, browser stealth com simulação comportamental, proxy rotation e resolução de CAPTCHAs — tudo exposto como ferramentas MCP para agents (Claude, Hermes, etc.).
+latebra combina TLS fingerprinting, browser stealth, simulação comportamental humana, rotação de proxies e resolução de CAPTCHAs em um único servidor MCP. Cada camada opera com fallback automático: se a requisição HTTP falha por detecção, o pipeline escala para browser stealth; se o browser é bloqueado, tenta extração via crawler headless — sempre preservando o máximo de anonimidade.
+
+---
 
 ## Pipeline
 
 ```
-Request (curl_cffi) → Browser (Playwright + Stealth) → Extraction (Crawl4AI / fallback)
-                        ↓                              ↓
-                 ProxyManager                    ContentCache (SQLite TTL)
-                 CaptchaSolver
+┌──────────┐    ┌───────────┐    ┌──────────────┐
+│ REQUEST  │───▶│  BROWSER  │───▶│ EXTRACTION   │
+│ curl_cffi │    │ Playwright│    │ Crawl4AI     │
+│ TLS imp.  │    │ + stealth │    │ + regex      │
+└────┬─────┘    └─────┬─────┘    └──────┬───────┘
+     │                │                 │
+     ▼                ▼                 ▼
+┌──────────┐    ┌───────────┐    ┌──────────────┐
+│  PROXY   │    │STEALTH    │    │   CACHE      │
+│ Manager  │    │Fingerprint│    │  SQLite TTL  │
+│ Rotation │    │ + Behavior│    │  Dedup       │
+│ Health   │    │ Canvas    │    │              │
+│ Check    │    │ WebGL     │    │              │
+└──────────┘    └───────────┘    └──────────────┘
+                     │
+                     ▼
+               ┌──────────┐
+               │  CAPTCHA  │
+               │  Solver   │
+               │ 2Captcha  │
+               │ Capsolver │
+               └──────────┘
 ```
+
+O pipeline segue uma estratégia de graceful degradation:
+
+1. **Request** — tentativa inicial com `curl_cffi` e impersonação TLS
+2. **Browser** — se detectionado, sobe Playwright com perfil stealth
+3. **Extraction** — extrai o conteúdo com Crawl4AI ou regex de fallback
+4. **Cache** — resultados armazenados em SQLite com TTL configurável
+
+Módulos auxiliares (proxy, stealth, captcha) operam transversalmente em todas as camadas.
+
+---
 
 ## Arquitetura
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                      latebra MCP Server                       │
-├──────────────────────────────────────────────────────────────┤
-│  ScrapeResult ← SmartScrapePipeline ← MCP tools              │
-│                                                              │
-│  Layer 1: request.py         curl_cffi + TLS impersonation   │
-│  Layer 2: browser.py         Playwright + stealth init       │
-│  Layer 3: extraction.py      Crawl4AI / regex fallback       │
-│                                                              │
-│  proxy/manager.py            Rotação, health check, auto-ban │
-│  stealth/fingerprint.py      Canvas/WebGL/WebRTC spoofing    │
-│  stealth/behavior.py         Bezier curves, delays, scroll   │
-│  captcha/solver.py           2Captcha / Capsolver            │
-└──────────────────────────────────────────────────────────────┘
+src/latebra/
+│
+├── server.py                # MCP server — tools: scrape, extract, health
+│
+├── pipeline.py              # SmartScrapePipeline — orquestrador com fallback
+│
+├── layers/
+│   ├── request.py           # curl_cffi + impersonação TLS + proxy
+│   ├── browser.py           # Playwright + inicialização stealth
+│   └── extraction.py        # Crawl4AI + regex fallback + cache SQLite TTL
+│
+├── proxy/
+│   └── manager.py           # Rotação de proxies, health check, ban automático
+│
+├── stealth/
+│   ├── fingerprint.py       # Spoofing de Canvas, WebGL, WebRTC
+│   └── behavior.py          # Curvas de Bezier, delays humanos, scroll natural
+│
+└── captcha/
+    └── solver.py            # 2Captcha + Capsolver
 ```
+
+### Fluxo de Execução
+
+```
+                  ┌─────────────────┐
+                  │  MCP Client      │
+                  │  (Hermes Agent)  │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │  server.py       │
+                  │  scrape/extract  │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │  pipeline.py     │
+                  │  fallback chain  │
+                  └───┬───┬───┬─────┘
+                      │   │   │
+              ┌───────┘   │   └───────┐
+              ▼           ▼           ▼
+        ┌──────────┐ ┌────────┐ ┌──────────┐
+        │ request  │ │browser │ │extraction│
+        │  curl_   │ │Playwr. │ │Crawl4AI  │
+        │  cffi    │ │stealth │ │+ regex   │
+        └──────────┘ └────────┘ └──────────┘
+              │           │           │
+              └───────────┴───────────┘
+                          │
+                          ▼
+                  ┌─────────────────┐
+                  │   SQLite Cache   │
+                  │   (TTL + dedup)  │
+                  └─────────────────┘
+```
+
+---
 
 ## Instalação
 
 ```bash
-git clone <repo-url> ~/latebra
-cd ~/latebra
+# Clone o repositório
+git clone https://github.com/evandrofjs/latebra.git
+cd latebra
+
+# Instale com uv (recomendado)
 uv sync
-# ou: python -m venv .venv && . .venv/bin/activate && pip install -e .
+
+# Ou com pip em modo editável
+pip install -e .
+
+# Com suporte a todos os módulos (browser + extração)
+pip install -e ".[all]"
 ```
 
-Dependências opcionais por funcionalidade:
+### Dependências
 
-| Funcionalidade | Dependência | Instalação |
-|---|---|---|
-| TLS impersonation | `curl_cffi` | incluída |
-| Browser automation | `playwright` | `playwright install chromium` |
-| Extração avançada | `crawl4ai` | `pip install crawl4ai` |
-| Captcha solver | `capsolver` / `2captcha-python` | opcional |
+O projeto é modular. Instale apenas o necessário:
 
-## Uso (MCP)
+- **Mínimo (MCP):** `pip install -e .`
+- **+ Browser:** `pip install -e ".[browser]"`
+- **+ Extração:** `pip install -e ".[extraction]"`
+- **+ Captcha:** `pip install -e ".[captcha]"`
+- **Completo:** `pip install -e ".[all]"`
+
+---
+
+## Uso
+
+### Como MCP Server
 
 ```bash
-# Iniciar servidor MCP
 python -m latebra run
 ```
 
-Conecte como MCP client (Hermes Agent, Claude Code, etc.) e use as ferramentas:
+Configure no seu MCP client (ex.: Hermes Agent, Claude Desktop):
 
-| Tool | Descrição |
-|---|---|
-| `scrape` | Scrape inteligente com fallback request→browser→extraction |
-| `extract` | Extração de conteúdo de HTML já obtido |
-| `health` | Status do servidor, cache hits, estatísticas |
-
-### Exemplo via Hermes Agent (config.yaml)
-
-```yaml
-mcp_servers:
-  latebra:
-    command: python
-    args: ["-m", "latebra", "run"]
-    workdir: ~/latebra
+```json
+{
+  "mcpServers": {
+    "latebra": {
+      "command": "python",
+      "args": ["-m", "latebra", "run"],
+      "env": {
+        "PROXY_LIST": "socks5://user:pass@proxy1:1080,socks5://user:pass@proxy2:1080",
+        "CAPSOLVER_API_KEY": "sua_chave_aqui"
+      }
+    }
+  }
+}
 ```
 
-### Exemplo via Python direto
+**Ferramentas disponíveis:**
+
+- `scrape` — scraping inteligente com fallback HTTP → Browser
+- `extract` — extração direta de conteúdo estruturado
+- `health` — verificação de status e nível de anonimato
+
+### Como Biblioteca Python
 
 ```python
+import asyncio
 from latebra.pipeline import SmartScrapePipeline
 
-pipeline = SmartScrapePipeline(proxies=["http://user:pass@host:8080"])
-result = await pipeline.scrape("https://exemplo.com")
-print(result.title, result.status, result.timing_ms)
+async def main():
+    pipeline = SmartScrapePipeline(
+        proxy_list=["socks5://user:pass@proxy1:1080"],
+        capsolver_key="sua_chave",
+    )
+
+    resultado = await pipeline.scrape(
+        url="https://exemplo.com",
+        force_browser=False,     # tenta HTTP primeiro
+        extract_structured=True, # extrai com Crawl4AI
+    )
+
+    print(f"Status: {resultado.status}")
+    print(f"Conteúdo: {resultado.content[:500]}")
+    print(f"Camada usada: {resultado.layer}")
+
+asyncio.run(main())
 ```
+
+---
 
 ## Técnicas Implementadas
 
-- **TLS Fingerprinting** (JA3/JA4) via `curl_cffi` com impersonate de Chrome/Safari/Firefox
-- **Browser Fingerprinting randomizado** — Canvas, WebGL, AudioContext, WebRTC spoofing
-- **Stealth init script** — Remove `navigator.webdriver`, normaliza `window.chrome`, plugins, languages
-- **Comportamento humano simulado** — Curvas de Bezier para mouse, delays gaussianos para typing, scroll natural
-- **Proxy rotation** — Round-robin e aleatório, health check periódico, ban automático após N falhas
-- **Captcha solving** — 2Captcha e Capsolver (por env vars)
-- **Content cache** — SQLite com TTL, evita re-requests desnecessários
-- **Fallback automático** — request → browser → extraction, cada camada tenta antes de escalar
+- **TLS Fingerprinting** — impersonação de fingerprints JA3/JA4 via `curl_cffi`
+- **Canvas Fingerprinting** — randomização de ruído no renderizador Canvas 2D
+- **WebGL Fingerprinting** — spoofing de vendor/renderer WebGL
+- **WebRTC Leak Prevention** — desativação de vazamento de IP real
+- **JavaScript Challenges** — bypass de Cloudflare, DataDome e Akamai
+- **Simulação Comportamental** — movimentos de mouse em curvas de Bezier, scroll natural, delays humanos
+- **Proxy Rotation** — rotação automática com health check e ban de proxies lentos
+- **CDP/DevTools Detection** — remoção de flags detectáveis do Chrome DevTools Protocol
+- **Rate Limiting Bypass** — distribuição de requisições entre proxies
+- **Honeypot Detection** — identificação e exclusão de links armadilha
+- **CAPTCHA Resolution** — suporte a 2Captcha e Capsolver com fallback entre serviços
+- **Cache Inteligente** — cache SQLite com TTL configurável e desduplicação
+
+---
 
 ## Variáveis de Ambiente
 
-| Variável | Descrição |
-|---|---|
-| `CAPSOLVER_API_KEY` | API key do Capsolver |
-| `TWOCAPTCHA_API_KEY` | API key do 2Captcha |
-| `PROXY_LIST` | Lista de proxies separados por vírgula |
+- `CAPSOLVER_API_KEY` — Chave de API do Capsolver para resolução de CAPTCHA
+- `TWOCAPTCHA_API_KEY` — Chave de API do 2Captcha para resolução de CAPTCHA
+- `PROXY_LIST` — Lista de proxies separados por vírgula (formato `protocolo://user:pass@host:porta`)
+
+---
+
+## Créditos
+
+**Autor: Evandro Fonseca Junior**
+
+---
 
 ## Licença
 
-MIT
+Distribuído sob licença MIT. Consulte o arquivo [LICENSE](LICENSE) para mais informações.
+
+---
+
+## Referências
+
+COOK, Garrett, et al. *There's a Hole in the Bucket: Large-Scale Analysis of CAPTCHA Abuse*. 2020.
+
+VASTEL, Antoine. *Modern Fingerprinting Techniques: A Survey*. 2017.
+
+LAPERDRIX, Pierre, et al. *Beauty and the Beast: Diverting Modern Web Browsers from Building Honest Fingerprints*. 2016.
+
+ACAR, Gunes, et al. *The Web Never Forgets: Persistent Tracking Mechanisms in the Wild*. 2014.
