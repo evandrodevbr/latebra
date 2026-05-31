@@ -9,6 +9,12 @@ from typing import Any
 
 import httpx
 
+from latebra.constants import (
+    CAPTCHA_POLL_INTERVAL_2CAPTCHA,
+    CAPTCHA_POLL_INTERVAL_CAPSOLVER,
+    CAPTCHA_POLL_MAX_ATTEMPTS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,8 +87,8 @@ class CaptchaSolver:
             captcha_id = data["request"]
 
             # Poll for result
-            for _ in range(60):
-                await asyncio.sleep(5)
+            for _ in range(CAPTCHA_POLL_MAX_ATTEMPTS):
+                await asyncio.sleep(CAPTCHA_POLL_INTERVAL_2CAPTCHA)
                 poll = await self._client.post(
                     "https://2captcha.com/res.php",
                     params={
@@ -135,8 +141,8 @@ class CaptchaSolver:
                 result.error = f"capsolver create failed: {data}"
                 return result
 
-            for _ in range(60):
-                await asyncio.sleep(3)
+            for _ in range(CAPTCHA_POLL_MAX_ATTEMPTS):
+                await asyncio.sleep(CAPTCHA_POLL_INTERVAL_CAPSOLVER)
                 poll = await self._client.post(
                     "https://api.capsolver.com/getTaskResult",
                     json={

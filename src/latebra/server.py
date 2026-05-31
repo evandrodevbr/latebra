@@ -13,6 +13,7 @@ from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 import mcp.server.stdio
 
+from latebra.constants import PREVIEW_MAX_LENGTH
 from latebra.pipeline import SmartScrapePipeline, ScrapeResult
 
 logger = logging.getLogger("latebra")
@@ -86,30 +87,38 @@ class LatebraServer:
         ]
 
     async def handle_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Handle a tool call and return MCP-formatted result."""
-        if name == "latebra_scrape":
-            result = await self.pipeline.scrape(arguments["url"])
-            return self._format_result(result)
-        elif name == "latebra_scrape_with_browser":
-            result = await self.pipeline.scrape_with_browser(
-                arguments["url"],
-                browser=arguments.get("browser", "patchright"),
-            )
-            return self._format_result(result)
-        elif name == "latebra_check_anonymity":
-            url = arguments.get("url", "https://httpbin.org/headers")
-            result = await self.pipeline.check_anonymity(url)
-            if hasattr(result, "to_dict"):
-                return result.to_dict()  # type: ignore
-            return result  # type: ignore
-        else:
+        """Handle a tool call via dispatch dict."""
+        dispatch = {
+            "latebra_scrape": self._handle_scrape,
+            "latebra_scrape_with_browser": self._handle_scrape_with_browser,
+            "latebra_check_anonymity": self._handle_check_anonymity,
+        }
+        handler = dispatch.get(name)
+        if handler is None:
             raise ValueError(f"Unknown tool: {name}")
+        return await handler(arguments)
+
+    async def _handle_scrape(self, args: dict[str, Any]) -> dict[str, Any]:
+        result = await self.pipeline.scrape(args["url"])
+        return self._format_result(result)
+
+    async def _handle_scrape_with_browser(self, args: dict[str, Any]) -> dict[str, Any]:
+        result = await self.pipeline.scrape_with_browser(
+            args["url"],
+            browser=args.get("browser", "patchright"),
+        )
+        return self._format_result(result)
+
+    async def _handle_check_anonymity(self, args: dict[str, Any]) -> dict[str, Any]:
+        url = args.get("url", "https://httpbin.org/headers")
+        result = await self.pipeline.check_anonymity(url)
+        return result if isinstance(result, dict) else result.to_dict()
 
     def _format_result(self, result: ScrapeResult) -> dict[str, Any]:
         """Format ScrapeResult for JSON response."""
         base = result.to_dict()
         base["content_preview"] = (
-            result.content[:500] + "..." if result.content and len(result.content) > 500
+            result.content[:PREVIEW_MAX_LENGTH] + "..." if result.content and len(result.content) > PREVIEW_MAX_LENGTH
             else result.content or ""
         )
         return base

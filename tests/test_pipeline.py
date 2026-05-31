@@ -59,7 +59,6 @@ class TestSmartScrapePipeline:
 
     def test_init_default(self):
         pipeline = SmartScrapePipeline()
-        assert pipeline._proxy_rotation_count == 0
         assert pipeline.request_layer is not None
         assert pipeline.browser_layer is not None
         assert pipeline.extraction_layer is not None

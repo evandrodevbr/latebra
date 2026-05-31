@@ -7,6 +7,21 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from latebra.constants import (
+    AUDIO_NOISE_MAX,
+    AUDIO_NOISE_MIN,
+    CANVAS_NOISE_MAX,
+    CANVAS_NOISE_MIN,
+    DEVICE_MEMORY_OPTIONS,
+    DEVICE_SCALE_FACTORS,
+    HARDWARE_CONCURRENCY_OPTIONS,
+    LANGUAGES,
+    PLATFORMS,
+    TIMEZONES,
+    USER_AGENTS,
+    VIEWPORTS,
+)
+
 
 @dataclass
 class BrowserFingerprint:
@@ -30,39 +45,17 @@ class BrowserFingerprint:
 class FingerprintGenerator:
     """Generates randomized browser fingerprints for anti-detection."""
 
-    USER_AGENTS = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    ]
-
-    VIEWPORTS = [
-        (1920, 1080), (1366, 768), (1536, 864),
-        (1440, 900), (1280, 720), (1680, 1050),
-    ]
-
-    PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"]
-    TIMEZONES = [
-        "America/New_York", "America/Chicago", "America/Los_Angeles",
-        "Europe/London", "Europe/Berlin", "Asia/Tokyo", "America/Sao_Paulo",
-    ]
-    LANGUAGES = [
-        ["en-US", "en"], ["en-GB", "en"], ["en-CA", "en"],
-        ["en-US", "en", "pt-BR"], ["en", "fr"],
-    ]
+    USER_AGENTS = USER_AGENTS
+    VIEWPORTS = VIEWPORTS
+    PLATFORMS = PLATFORMS
+    TIMEZONES = TIMEZONES
+    LANGUAGES = LANGUAGES
 
     def generate(self) -> BrowserFingerprint:
         fp = BrowserFingerprint()
         fp.user_agent = random.choice(self.USER_AGENTS)
         fp.viewport_width, fp.viewport_height = random.choice(self.VIEWPORTS)
-        fp.device_scale_factor = random.choice([1.0, 1.25, 1.5, 2.0])
+        fp.device_scale_factor = random.choice(DEVICE_SCALE_FACTORS)
         fp.platform = random.choice(self.PLATFORMS)
 
         # Vendor / Renderer
@@ -73,11 +66,11 @@ class FingerprintGenerator:
         ]
         fp.vendor, fp.renderer = random.choice(vendors)
 
-        # Canvas noise (~0.001 px)
-        fp.canvas_noise = random.uniform(0.0005, 0.002)
+        # Canvas noise
+        fp.canvas_noise = random.uniform(CANVAS_NOISE_MIN, CANVAS_NOISE_MAX)
 
         # Audio noise
-        fp.audio_noise = random.uniform(0.00001, 0.0001)
+        fp.audio_noise = random.uniform(AUDIO_NOISE_MIN, AUDIO_NOISE_MAX)
 
         # WebGL
         gl_options = [
@@ -88,8 +81,8 @@ class FingerprintGenerator:
         fp.webgl_vendor, fp.webgl_renderer = random.choice(gl_options)
 
         fp.languages = random.choice(self.LANGUAGES)
-        fp.hardware_concurrency = random.choice([4, 6, 8, 12, 16])
-        fp.device_memory = random.choice([4, 8, 16])
+        fp.hardware_concurrency = random.choice(HARDWARE_CONCURRENCY_OPTIONS)
+        fp.device_memory = random.choice(DEVICE_MEMORY_OPTIONS)
         fp.timezone = random.choice(self.TIMEZONES)
 
         return fp
@@ -120,7 +113,7 @@ class FingerprintGenerator:
         Object.defineProperty(navigator, 'platform', {{ get: () => '{fp.platform}' }});
         Object.defineProperty(navigator, 'hardwareConcurrency', {{ get: () => {fp.hardware_concurrency} }});
         Object.defineProperty(navigator, 'deviceMemory', {{ get: () => {fp.device_memory} }});
-        Object.defineProperty(navigator, 'languages', {{ get: () => {json.dumps(fp.languages)} }});
+        Object.defineProperty(navigator, 'languages', {{ get: () => {json.dumps(fp.languages, default=str)} }});
         Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
         window.chrome = window.chrome || {{ runtime: {{ }} }};
         """

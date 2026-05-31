@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from latebra.constants import IMPERSONATE_OPTIONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,11 +25,7 @@ class RequestResult:
 class AsyncRequestLayer:
     """Layer 1 HTTP requests with TLS fingerprint impersonation."""
 
-    IMPERSONATE_OPTIONS = [
-        "chrome120", "chrome123", "chrome124",
-        "safari15_5", "safari17_0",
-        "edge120", "firefox120",
-    ]
+    IMPERSONATE_OPTIONS = IMPERSONATE_OPTIONS
 
     def __init__(
         self,
@@ -39,6 +37,7 @@ class AsyncRequestLayer:
         self.max_retries = max_retries
         self.impersonate = impersonate
         self._session = None
+        self._impersonation_mode: str | None = None
 
     async def _ensure_session(self):
         if self._session is None:

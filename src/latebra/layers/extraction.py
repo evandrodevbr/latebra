@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from latebra.constants import DEFAULT_CACHE_TTL
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,7 @@ class ContentCache:
         raw = f"{url}:{selector or ''}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
-    def get(self, url: str, selector: str | None = None, ttl: int = 3600) -> dict | None:
+    def get(self, url: str, selector: str | None = None, ttl: int = DEFAULT_CACHE_TTL) -> dict | None:
         key = self._make_key(url, selector)
         cur = self._conn.execute(
             "SELECT data, created_at, ttl_seconds FROM cache WHERE key = ?",
@@ -77,7 +79,13 @@ class ContentCache:
             return None
         return json.loads(data_str)
 
-    def set(self, url: str, data: dict, selector: str | None = None, ttl: int = 3600) -> None:
+    def close(self) -> None:
+        """Close thread-local connection if open."""
+        if hasattr(self._local, "conn") and self._local.conn is not None:
+            self._local.conn.close()
+            self._local.conn = None
+
+    def set(self, url: str, data: dict, selector: str | None = None, ttl: int = DEFAULT_CACHE_TTL) -> None:
         key = self._make_key(url, selector)
         self._conn.execute(
             "INSERT OR REPLACE INTO cache (key, data, created_at, ttl_seconds) VALUES (?, ?, ?, ?)",
@@ -89,7 +97,7 @@ class ContentCache:
 class AsyncExtractionLayer:
     """Content extraction with Crawl4AI, CSS selectors, and caching."""
 
-    def __init__(self, cache_ttl: int = 3600, use_cache: bool = True):
+    def __init__(self, cache_ttl: int = DEFAULT_CACHE_TTL, use_cache: bool = True):
         self.cache_ttl = cache_ttl
         self.use_cache = use_cache
         self.cache = ContentCache() if use_cache else None

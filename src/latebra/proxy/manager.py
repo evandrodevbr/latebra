@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class ProxyEntry:
     def is_banned(self) -> bool:
         if self.banned_until is None:
             return False
-        return datetime.utcnow() < self.banned_until
+        return datetime.now(timezone.utc) < self.banned_until
 
     @property
     def is_healthy(self) -> bool:
@@ -34,10 +34,10 @@ class ProxyEntry:
 
     def record_failure(self):
         self.failed_count += 1
-        self.last_failure = datetime.utcnow()
+        self.last_failure = datetime.now(timezone.utc)
         if self.failed_count >= 3:
             cooldown = min(30 * (2 ** (self.failed_count - 3)), 3600)
-            self.banned_until = datetime.utcnow() + timedelta(seconds=cooldown)
+            self.banned_until = datetime.now(timezone.utc) + timedelta(seconds=cooldown)
             logger.info("Proxy %s banned for %ds", self.url, cooldown)
 
     def record_success(self):

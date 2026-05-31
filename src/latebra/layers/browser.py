@@ -8,6 +8,14 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from latebra.constants import (
+    ENGINES,
+    LOCALES,
+    TIMEZONES,
+    USER_AGENTS,
+    VIEWPORTS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,20 +33,13 @@ class BrowserResult:
 class AsyncBrowserLayer:
     """Browser scraping with stealth profiles and engine fallback chain."""
 
-    ENGINES = ["patchright", "camoufox", "nodriver"]
-    VIEWPORTS = [
-        (1920, 1080), (1366, 768), (1536, 864),
-        (1440, 900), (1280, 720),
-    ]
-    LOCALES = ["en-US", "en-GB", "en-CA", "en-AU"]
-    TIMEZONES = [
-        "America/New_York", "America/Chicago", "America/Los_Angeles",
-        "Europe/London", "Europe/Berlin", "Asia/Tokyo",
-    ]
+    ENGINES = ENGINES
+    VIEWPORTS = VIEWPORTS
+    LOCALES = LOCALES
+    TIMEZONES = TIMEZONES
 
     def __init__(self, stealth: bool = True):
         self.stealth = stealth
-        self._engine = None
 
     def _random_viewport(self) -> tuple[int, int]:
         return random.choice(self.VIEWPORTS)
@@ -50,14 +51,7 @@ class AsyncBrowserLayer:
         return random.choice(self.TIMEZONES)
 
     def _random_user_agent(self) -> str:
-        return random.choice([
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        ])
+        return random.choice(USER_AGENTS)
 
     async def scrape(self, url: str, engine: str = "patchright") -> BrowserResult:
         """Scrape URL with browser, falling back through engine chain on failure."""

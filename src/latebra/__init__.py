@@ -6,4 +6,26 @@ Multi-layer evasion pipeline:
   Layer 3 (Extraction): Crawl4AI + CSS/XPath + dedup + SQLite cache
 """
 
-__version__ = "0.1.0"
+from latebra.config import LatebraConfig
+from latebra.constants import (
+    DETECTION_MARKERS,
+    MIN_CONTENT_LENGTH,
+    PREVIEW_MAX_LENGTH,
+)
+from latebra.pipeline import ScrapeResult, SmartScrapePipeline
+from latebra.server import LatebraServer, serve
+from latebra.validation import validate
+
+__version__ = "0.2.0"
+
+__all__ = [
+    "LatebraConfig",
+    "LatebraServer",
+    "ScrapeResult",
+    "SmartScrapePipeline",
+    "DETECTION_MARKERS",
+    "MIN_CONTENT_LENGTH",
+    "PREVIEW_MAX_LENGTH",
+    "serve",
+    "validate",
+]

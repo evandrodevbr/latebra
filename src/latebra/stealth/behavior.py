@@ -78,7 +78,7 @@ class BehaviorSimulator:
                 await page.mouse.move(x, y)
                 await asyncio.sleep(self.random_delay(5, 20))
         except Exception as e:
-            logger.debug("Mouse simulation failed: %s", e)
+            logger.warning("Mouse simulation failed: %s", e)
 
     async def simulate_scroll(self, page: Any, scrolls: int = 3) -> None:
         """Simulate human-like scrolling behavior."""
@@ -95,7 +95,7 @@ class BehaviorSimulator:
                 pause = self.random_delay(500, 3000)
                 await asyncio.sleep(pause)
         except Exception as e:
-            logger.debug("Scroll simulation failed: %s", e)
+            logger.warning("Scroll simulation failed: %s", e)
 
     async def simulate_typing(self, page: Any, text: str, selector: str) -> None:
         """Simulate human-like typing into an input field."""
@@ -107,7 +107,7 @@ class BehaviorSimulator:
                 await page.keyboard.type(char)
                 await asyncio.sleep(self.random_typing_delay())
         except Exception as e:
-            logger.debug("Typing simulation failed: %s", e)
+            logger.warning("Typing simulation failed: %s", e)
 
     async def simulate_wait_random(self) -> None:
         """Wait a random amount of time like a human reading."""
