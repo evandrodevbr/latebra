@@ -40,12 +40,13 @@
 ## 🚀 Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/evandrofjs/latebra.git && cd latebra
-
-# Install
+# Via pip (modo desenvolvimento)
+git clone https://github.com/evandrodevbr/latebra.git && cd latebra
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[all]"
+
+# Ou via uvx (zero-install)
+uvx latebra
 
 # Start SearXNG (search backend)
 docker run -d --name searxng -p 8090:8080 searxng/searxng:latest
@@ -63,10 +64,15 @@ python -m latebra run
 # ~/.hermes/config.yaml
 mcp_servers:
   latebra:
-    command: python
-    args: [-m, latebra, run]
+    # Opção 1: usando uvx (recomendado)
+    command: uvx
+    args: [latebra]
     env:
       SEARXNG_URL: http://localhost:8090
+
+    # Opção 2: usando python direto
+    # command: python
+    # args: [-m, latebra, run]
 ```
 </details>
 
@@ -111,14 +117,14 @@ mcp_servers:
 ### `latebra_scrape`
 **Pipeline inteligente: curl_cffi → browser fallback automático.**
 
-```python
-# O agente chama:
-latebra_scrape(url="https://news.ycombinator.com")
+```json
+// Invocação MCP:
+{"tool": "latebra_scrape", "arguments": {"url": "https://news.ycombinator.com"}}
 
-# Resposta:
+// Resposta:
 {
   "status": "success",
-  "layer_used": "request",        # ← bypassou Cloudflare com curl_cffi!
+  "layer_used": "request",        // ← bypassou Cloudflare com curl_cffi!
   "content_length": 35496,
   "timing_ms": 792,
   "title": "Hacker News"
@@ -128,57 +134,71 @@ latebra_scrape(url="https://news.ycombinator.com")
 ### `latebra_search`
 **Busca web privada via SearXNG (sem tracking, sem ads, sem rate limit).**
 
-```python
-latebra_search(query="inteligencia artificial 2026", max_results=5)
-# → 5 resultados em ~860ms
+```json
+// Invocação MCP:
+{"tool": "latebra_search", "arguments": {"query": "inteligencia artificial 2026", "max_results": 5}}
+
+// Resposta (exemplo):
+{
+  "results": [
+    {"title": "...", "url": "...", "snippet": "..."},
+    ...
+  ],
+  "total_ms": 863
+}
 ```
 
 ### `latebra_crawl`
 **Deep crawl com BFS: descobre e mapeia sites automaticamente.**
 
-```python
-latebra_crawl(url="https://docs.python.org/3/", max_depth=2, max_pages=50)
-# → Navega até 2 níveis de profundidade, coleta até 50 páginas
+```json
+// Invocação MCP:
+{"tool": "latebra_crawl", "arguments": {"url": "https://docs.python.org/3/", "max_depth": 2, "max_pages": 50}}
+// → Navega até 2 níveis de profundidade, coleta até 50 páginas
 ```
 
 ### `latebra_batch_scrape`
 **Múltiplas URLs em paralelo com controle de concorrência.**
 
-```python
-latebra_batch_scrape(
-  urls=["https://api.github.com", "https://httpbin.org/ip"],
-  max_concurrent=5
-)
-# → 3 URLs em ~5.8s com concorrência controlada
+```json
+// Invocação MCP:
+{
+  "tool": "latebra_batch_scrape",
+  "arguments": {
+    "urls": ["https://api.github.com", "https://httpbin.org/ip", "https://news.ycombinator.com"],
+    "max_concurrent": 5
+  }
+}
+// → 3 URLs em paralelo, ~1.9s por URL com concorrência controlada
 ```
 
 ### `latebra_interact`
 **Click, type, navigate — interaja com SPAs e formulários.**
 
-```python
-# Navegar
-latebra_interact(action="navigate", url="https://example.com/login")
+```json
+// Navegar:
+{"tool": "latebra_interact", "arguments": {"action": "navigate", "url": "https://example.com/login"}}
 
-# Clicar
-latebra_interact(action="click", selector="button.submit")
+// Clicar:
+{"tool": "latebra_interact", "arguments": {"action": "click", "selector": "button.submit"}}
 
-# Digitar
-latebra_interact(action="type", selector="input[name=email]", text="user@example.com")
+// Digitar:
+{"tool": "latebra_interact", "arguments": {"action": "type", "selector": "input[name=email]", "text": "user@example.com"}}
 ```
 
 ### `latebra_scrape_with_browser`
 **Força browser mode (Patchright/Camoufox/Nodriver).**
 
-```python
-latebra_scrape_with_browser(url="https://spa.example.com", browser="camoufox")
+```json
+{"tool": "latebra_scrape_with_browser", "arguments": {"url": "https://spa.example.com", "browser": "camoufox"}}
 ```
 
 ### `latebra_check_anonymity`
 **Verifica se você está sendo detectado como bot.**
 
-```python
-latebra_check_anonymity(url="https://browserscan.net")
-# → Retorna quais markers de detecção foram encontrados
+```json
+{"tool": "latebra_check_anonymity", "arguments": {"url": "https://browserscan.net"}}
+// → Retorna quais markers de detecção foram encontrados
 ```
 
 ---
@@ -276,7 +296,7 @@ Início
 | `latebra_scrape` (curl_cffi) | **142ms avg** | ~7 req/s |
 | `latebra_search` (5 resultados) | **863ms** | — |
 | `latebra_crawl` (depth=0) | **485ms** | — |
-| `latebra_batch_scrape` (3 URLs) | **5.870ms** (total) | concorrente |
+| `latebra_batch_scrape` (3 URLs) | **1.9s/URL** (concorrente) | ~3 req/s |
 | Hacker News (Cloudflare) | **792ms** ✅ bypass | curl_cffi |
 | Wikipedia | **189ms** | 166KB |
 | Memória 100 ops | **+0.4MB** | sem leak |
@@ -424,7 +444,7 @@ pip install -e ".[all,dev]"
 ## 🤝 Contribuindo
 
 ```bash
-git clone https://github.com/evandrofjs/latebra.git
+git clone https://github.com/evandrodevbr/latebra.git
 cd latebra
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[all,dev]"
