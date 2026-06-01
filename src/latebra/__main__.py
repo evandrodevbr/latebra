@@ -14,10 +14,31 @@ import sys
 
 
 def main() -> None:
-    """CLI entry point."""
-    parser = argparse.ArgumentParser(prog="latebra", description="Anti-bot scraping MCP server")
-    parser.add_argument("command", nargs="?", default="run", help="Command (default: run)")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
+    """CLI entry point. Supports --version and sub-commands."""
+    from latebra import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="latebra",
+        description="Anti-bot scraping MCP server",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"latebra {__version__}",
+        help="Show version and exit",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="run",
+        choices=["run", "install"],
+        help="Command (default: run)",
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
 
     args = parser.parse_args()
 
@@ -42,6 +63,9 @@ def main() -> None:
     if args.command == "run":
         from latebra.server import serve
         asyncio.run(serve())
+    elif args.command == "install":
+        from latebra.install import run_install
+        asyncio.run(run_install())
     else:
         print(f"Unknown command: {args.command}")
         sys.exit(1)

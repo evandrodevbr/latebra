@@ -282,11 +282,11 @@ class LatebraServer:
         )
         return base
 
-
 async def serve() -> None:
     """Run the MCP server with latebra tools."""
     # Initialize file logging (safe to call multiple times)
     from latebra.log_utils import setup_file_logging, get_log_path
+
     setup_file_logging()
     logger.info("Logs at: %s", get_log_path())
 
@@ -315,6 +315,24 @@ async def serve() -> None:
                 ),
             ),
         )
+
+
+def cli() -> None:
+    """Entry point for ``latebra-mcp`` console_scripts.
+
+    Calls serve() with proper Windows encoding safeguards.
+    """
+    import os
+    import sys
+
+    # Windows console encoding fix
+    if sys.platform == "win32":
+        os.environ.setdefault("PYTHONUTF8", "1")
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+    import asyncio
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(serve())
 
 
 if __name__ == "__main__":

@@ -9,6 +9,10 @@ dependencies = [
     "mcp>=1.0.0",
 ]
 
+[project.scripts]
+latebra = "latebra.__main__:main"
+latebra-mcp = "latebra.server:cli"
+
 [project.optional-dependencies]
 browser = [
     "patchright>=1.0.0",
@@ -35,8 +39,8 @@ captcha = [
 ]
 
 [project.urls]
-homepage = "https://github.com/evandrofjs/latebra"
-repository = "https://github.com/evandrofjs/latebra"
+homepage = "https://github.com/evandrodevbr/latebra"
+repository = "https://github.com/evandrodevbr/latebra"
 
 [build-system]
 requires = ["setuptools>=75.0"]

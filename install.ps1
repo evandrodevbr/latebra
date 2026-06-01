@@ -10,7 +10,7 @@ param(
     [string]$InstallDir = "$env:USERPROFILE\.latebra",
     [string]$Version = "0.2.0",
     [switch]$NoBrowser = $false,
-    [string]$RepoUrl = "https://github.com/evandrofjs/latebra.git"
+    [string]$RepoUrl = "https://github.com/evandrodevbr/latebra.git"
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,42 +101,50 @@ if ($RepoDir) {
 Write-OK "latebra $Version instalado"
 Pop-Location
 
-# ── Instalar navegadores (opcional) ──────────────
-$Playwright = Join-Path $VenvDir "Scripts" "playwright.exe"
-if ((Test-Path $Playwright) -and (-not $NoBrowser)) {
-    Write-Info "Instalando navegadores Patchright..."
-    & $Playwright install chromium 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-OK "Chromium instalado"
-    } else {
-        Write-Warn "Chromium não instalado (opcional)"
-    }
+# ── Post-install: navegadores + verificação ──────
+Write-Info "Executando latebra install (browsers)..."
+$LatebraInstall = & $VenvPython -m latebra install 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-OK "latebra install concluído"
+} else {
+    Write-Warn "latebra install reportou erros (browsers opcionais)"
+}
+
+# ── Verificar latebra-mcp.exe ────────────────────
+$LatebraMcpExe = Join-Path $VenvDir "Scripts" "latebra-mcp.exe"
+if (Test-Path $LatebraMcpExe) {
+    Write-OK "latebra-mcp.exe disponível em: $LatebraMcpExe"
+} else {
+    Write-Warn "latebra-mcp.exe não encontrado — usando python -m latebra run"
+    $LatebraMcpExe = $VenvPython
+    $LatebraMcpArgs = @("-m", "latebra", "run")
 }
 
 # ── Configurar MCP (Claude Desktop) ──────────────
 $ClaudeConfigPath = Join-Path $env:APPDATA "Claude" "claude_desktop_config.json"
 if (Test-Path $ClaudeConfigPath) {
-    $config = Get-Content $ClaudeConfigPath -Raw | ConvertFrom-Json -AsHashtable
+    $config = Get-Content $ClaudeConfigPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
     if (-not $config.mcpServers) { $config.mcpServers = @{} }
     if (-not $config.mcpServers.latebra) {
         Write-Info "Configurando MCP no Claude Desktop..."
-        $latebraExe = Join-Path $VenvDir "Scripts" "latebra-mcp.exe"
         $config.mcpServers.latebra = @{
-            command = $latebraExe
+            command = $LatebraMcpExe
             args = @()
             env = @{
                 LATEBRA_PROXIES = $env:LATEBRA_PROXIES ?? ""
                 LATEBRA_2CAPTCHA_KEY = $env:LATEBRA_2CAPTCHA_KEY ?? ""
+                PYTHONUTF8 = "1"
+                PYTHONIOENCODING = "utf-8"
             }
         }
-        $config | ConvertTo-Json -Depth 10 | Set-Content $ClaudeConfigPath
+        $config | ConvertTo-Json -Depth 10 | Set-Content $ClaudeConfigPath -Encoding UTF8
         Write-OK "MCP configurado em: $ClaudeConfigPath"
     } else {
         Write-Info "MCP já configurado"
     }
 } else {
     Write-Warn "Claude Desktop não encontrado. Adicione manualmente ao seu cliente MCP:"
-    Write-Host "  Comando: $VenvDir\Scripts\latebra-mcp.exe"
+    Write-Host "  Comando: $LatebraMcpExe $($LatebraMcpArgs -join ' ')"
 }
 
 # ── Wrap-up ──────────────────────────────────────
@@ -147,6 +155,7 @@ Write-Host "╚═════════════════════�
 Write-Host ""
 Write-Host "  Shell:     $VenvDir\Scripts\Activate.ps1"
 Write-Host "  Testar:    latebra-mcp --version"
+Write-Host "  Atualizar: python -m latebra install"
 Write-Host "  Diretório: $InstallDir"
 Write-Host ""
 Write-Host "  Variáveis de ambiente opcionais:" -ForegroundColor Yellow
