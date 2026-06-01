@@ -65,12 +65,12 @@ async def test_batch_scrape_performance():
 
 # ═══════════ Tool count verification ═══════════
 
-def test_mcp_tool_count():
-    """Verify all 7 MCP tools are registered."""
+def test_mcp_tool_count() -> None:
+    """Verify all 8 MCP tools are registered."""
     from latebra.server import LatebraServer
     server = LatebraServer()
     tools = server.tool_definitions
-    assert len(tools) == 7
+    assert len(tools) == 8  # 7 original + latebra_get_log_path
     names = {t["name"] for t in tools}
     expected = {
         "latebra_scrape",
@@ -80,5 +80,6 @@ def test_mcp_tool_count():
         "latebra_crawl",
         "latebra_batch_scrape",
         "latebra_interact",
+        "latebra_get_log_path",
     }
     assert names == expected, f"Missing tools: {expected - names}"

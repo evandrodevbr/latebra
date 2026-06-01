@@ -27,6 +27,18 @@ def main() -> None:
         stream=sys.stderr,
     )
 
+    # Initialize file logging (cross-platform, rotating)
+    from latebra.log_utils import setup_file_logging, get_log_path
+    setup_file_logging()
+    logging.getLogger("latebra").info("File logging initialized — logs at: %s", get_log_path())
+
+    # Capture uncaught exceptions
+    def _excepthook(typ, val, tb) -> None:
+        logging.getLogger("latebra").critical(
+            "Uncaught %s: %s", typ.__name__, val, exc_info=(typ, val, tb)
+        )
+    sys.excepthook = _excepthook
+
     if args.command == "run":
         from latebra.server import serve
         asyncio.run(serve())

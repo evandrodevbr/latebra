@@ -183,6 +183,15 @@ class LatebraServer:
                     "required": ["action"],
                 },
             },
+            {
+                "name": "latebra_get_log_path",
+                "description": "Returns the absolute path to the latebra log directory. "
+                               "Use this when reporting issues — attach the errors.log file.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
         ]
 
     async def handle_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -195,6 +204,7 @@ class LatebraServer:
             "latebra_crawl": self._handle_crawl,
             "latebra_batch_scrape": self._handle_batch_scrape,
             "latebra_interact": self._handle_interact,
+            "latebra_get_log_path": self._handle_get_log_path,
         }
         handler = dispatch.get(name)
         if handler is None:
@@ -257,6 +267,12 @@ class LatebraServer:
             )
         return {"error": f"Unknown action: {action}"}
 
+    async def _handle_get_log_path(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Return the path to the log directory for user troubleshooting."""
+        from latebra.log_utils import get_log_path
+
+        return {"log_path": get_log_path()}
+
     def _format_result(self, result: ScrapeResult) -> dict[str, Any]:
         """Format ScrapeResult for JSON response."""
         base = result.to_dict()
@@ -269,6 +285,11 @@ class LatebraServer:
 
 async def serve() -> None:
     """Run the MCP server with latebra tools."""
+    # Initialize file logging (safe to call multiple times)
+    from latebra.log_utils import setup_file_logging, get_log_path
+    setup_file_logging()
+    logger.info("Logs at: %s", get_log_path())
+
     mcp_server = Server("latebra")
     latebra = LatebraServer()
 
