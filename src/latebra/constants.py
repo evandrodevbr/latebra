@@ -9,6 +9,59 @@ Licença: MIT
 
 from __future__ import annotations
 
+import platform
+from pathlib import Path
+
+# ── App identity ────────────────────────────────
+APP_NAME = "latebra"
+
+# ── Cross-platform directories ──────────────────
+_DATA_DIR: Path | None = None
+_LOG_DIR: Path | None = None
+
+
+def _get_data_dir() -> Path:
+    """Return cross-platform application data directory (without mkdir)."""
+    system = platform.system()
+    if system == "Windows":
+        base = Path.home() / "AppData" / "Local"
+    elif system == "Linux":
+        base = Path.home() / ".local" / "share"
+    elif system == "Darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path.home() / ".latebra"
+    return base / APP_NAME
+
+
+def get_data_dir() -> Path:
+    """Get (or create) the application data directory.
+
+    Platform-aware:
+    - Linux:   ~/.local/share/latebra/
+    - Windows: %LOCALAPPDATA%/latebra/
+    - macOS:   ~/Library/Application Support/latebra/
+    """
+    global _DATA_DIR
+    if _DATA_DIR is None:
+        _DATA_DIR = _get_data_dir()
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return _DATA_DIR
+
+
+def get_log_dir() -> Path:
+    """Get (or create) the logs subdirectory under the data directory.
+
+    Returns:
+        Path like ~/.local/share/latebra/logs/ (Linux)
+    """
+    global _LOG_DIR
+    if _LOG_DIR is None:
+        _LOG_DIR = get_data_dir() / "logs"
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return _LOG_DIR
+
+
 # ── Content thresholds ───────────────────────────
 MIN_CONTENT_LENGTH: int = 500
 """Minimum content length (bytes) to consider a response successful."""
