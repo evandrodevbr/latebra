@@ -119,3 +119,39 @@ async def test_bing_engine_returns_results():
         assert "url" in r
         assert "snippet" in r
         assert r["engine"] == "bing"
+
+
+@pytest.mark.asyncio
+async def test_builtin_search_layer_exists():
+    """BuiltInSearchLayer should be importable."""
+    from latebra.layers.search_builtin import BuiltInSearchLayer
+    assert BuiltInSearchLayer is not None
+
+
+@pytest.mark.asyncio
+async def test_builtin_search_layer_search():
+    """BuiltInSearchLayer should search across multiple engines."""
+    from latebra.layers.search_builtin import BuiltInSearchLayer
+
+    layer = BuiltInSearchLayer()
+    results = await layer.search("python programming", max_results=5)
+
+    assert isinstance(results, list)
+    assert len(results) > 0
+    assert len(results) <= 5
+
+    # Check round-robin merge (different engines)
+    engines = {r["engine"] for r in results}
+    assert len(engines) > 1, "Should have results from multiple engines"
+
+
+@pytest.mark.asyncio
+async def test_builtin_search_layer_dedup():
+    """BuiltInSearchLayer should deduplicate results by URL."""
+    from latebra.layers.search_builtin import BuiltInSearchLayer
+
+    layer = BuiltInSearchLayer()
+    results = await layer.search("python", max_results=10)
+
+    urls = [r["url"] for r in results]
+    assert len(urls) == len(set(urls)), "Results should be deduplicated"
