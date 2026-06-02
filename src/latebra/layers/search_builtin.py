@@ -85,3 +85,31 @@ class GoogleEngine(BaseSearchEngine):
         except Exception as e:
             logger.warning("Google search failed: %s", e)
             return []
+
+
+class BingEngine(BaseSearchEngine):
+    """Bing search via ddgs library."""
+
+    def __init__(self, timeout: int = 10) -> None:
+        self._timeout = timeout
+
+    async def search(
+        self, query: str, max_results: int = 10
+    ) -> list[dict[str, Any]]:
+        """Search Bing and return results."""
+        try:
+            from ddgs import DDGS
+
+            results = DDGS().text(query, max_results=max_results, backend="bing")
+            return [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                    "engine": "bing",
+                }
+                for r in results
+            ]
+        except Exception as e:
+            logger.warning("Bing search failed: %s", e)
+            return []

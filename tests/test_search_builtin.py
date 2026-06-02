@@ -93,3 +93,29 @@ async def test_google_engine_returns_results():
         assert "url" in r
         assert "snippet" in r
         assert r["engine"] == "google"
+
+
+@pytest.mark.asyncio
+async def test_bing_engine_import():
+    """BingEngine should be importable."""
+    from latebra.layers.search_builtin import BingEngine
+    assert BingEngine is not None
+
+
+@pytest.mark.asyncio
+async def test_bing_engine_returns_results():
+    """Bing should return search results."""
+    from latebra.layers.search_builtin import BingEngine
+
+    engine = BingEngine()
+    results = await engine.search("python programming", max_results=3)
+
+    assert isinstance(results, list)
+    assert len(results) > 0
+    assert len(results) <= 3
+
+    for r in results:
+        assert "title" in r
+        assert "url" in r
+        assert "snippet" in r
+        assert r["engine"] == "bing"
