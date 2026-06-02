@@ -56,6 +56,9 @@ class LatebraConfig:
 
     # ── Logging ───────────────────────────────────
     log_level: str = "INFO"
+    # ── Search Backend ─────────────────────────────
+    search_backend: str = "auto"
+    """Search backend: 'auto', 'searxng', or 'built-in'."""
 
     @classmethod
     def from_env(cls, prefix: str = "LATEBRA_") -> LatebraConfig:
@@ -71,6 +74,7 @@ class LatebraConfig:
             LATEBRA_REQUEST_TIMEOUT: HTTP timeout in seconds
             LATEBRA_MAX_RETRIES: retry count
             LATEBRA_LOG_LEVEL: logging level
+            LATEBRA_SEARCH_BACKEND: search backend ('auto', 'searxng', 'built-in')
         """
         return cls(
             proxies=_parse_proxies(os.getenv(f"{prefix}PROXIES", "")),
@@ -91,6 +95,7 @@ class LatebraConfig:
                 os.getenv(f"{prefix}MAX_RETRIES", str(DEFAULT_MAX_RETRIES))
             ),
             log_level=os.getenv(f"{prefix}LOG_LEVEL", "INFO").upper(),
+            search_backend=os.getenv(f"{prefix}SEARCH_BACKEND", "auto"),
         )
 
 

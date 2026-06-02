@@ -91,3 +91,14 @@ class TestLatebraConfig:
         monkeypatch.setenv("LATEBRA_CACHE_DIR", "~/custom/cache")
         config = LatebraConfig.from_env()
         assert config.cache_dir == os.path.expanduser("~/custom/cache")
+
+    def test_search_backend_default(self):
+        """Config should have search_backend default to 'auto'."""
+        config = LatebraConfig()
+        assert config.search_backend == "auto"
+
+    def test_search_backend_from_env(self, monkeypatch):
+        """Config should read search_backend from env."""
+        monkeypatch.setenv("LATEBRA_SEARCH_BACKEND", "built-in")
+        config = LatebraConfig.from_env()
+        assert config.search_backend == "built-in"
