@@ -19,6 +19,7 @@ from latebra.pipeline import SmartScrapePipeline, ScrapeResult
 from latebra.layers.search import SearchLayer, DEFAULT_SEARXNG_URL
 from latebra.layers.crawler import CrawlerLayer
 from latebra.layers.interact import InteractLayer
+from latebra.config import LatebraConfig
 
 logger = logging.getLogger("latebra")
 
@@ -32,13 +33,19 @@ class LatebraServer:
         two_captcha_key: str | None = None,
         capsolver_key: str | None = None,
         searxng_url: str = DEFAULT_SEARXNG_URL,
+        config: LatebraConfig | None = None,
     ) -> None:
         self.pipeline = SmartScrapePipeline(
             proxies=proxies,
             two_captcha_key=two_captcha_key,
             capsolver_key=capsolver_key,
         )
-        self.search = SearchLayer(base_url=searxng_url)
+        # Use config if provided, otherwise defaults
+        search_backend = config.search_backend if config else "auto"
+        self.search = SearchLayer(
+            base_url=searxng_url,
+            search_backend=search_backend,
+        )
         self.crawler = CrawlerLayer(max_depth=2, max_pages=20)
         self.interact = InteractLayer()
 

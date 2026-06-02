@@ -58,3 +58,11 @@ class TestLatebraServer:
         assert formatted["status"] == "success"
         assert formatted["content_preview"].endswith("...")
         assert formatted["title"] == "Test"
+
+    def test_search_backend_config(self):
+        """Server should pass search_backend to SearchLayer."""
+        from latebra.config import LatebraConfig
+
+        config = LatebraConfig(search_backend="built-in")
+        server = LatebraServer(config=config)
+        assert server.search.search_backend == "built-in"
