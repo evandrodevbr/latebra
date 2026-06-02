@@ -11,6 +11,7 @@ from typing import Any
 
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
+from mcp.types import Tool
 import mcp.server.stdio
 
 from latebra.constants import PREVIEW_MAX_LENGTH
@@ -294,8 +295,15 @@ async def serve() -> None:
     latebra = LatebraServer()
 
     @mcp_server.list_tools()
-    async def list_tools() -> list:
-        return latebra.tool_definitions
+    async def list_tools() -> list[Tool]:
+        return [
+            Tool(
+                name=t["name"],
+                description=t["description"],
+                inputSchema=t["inputSchema"],
+            )
+            for t in latebra.tool_definitions
+        ]
 
     @mcp_server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list:
