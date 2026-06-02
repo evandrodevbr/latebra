@@ -57,3 +57,31 @@ class DuckDuckGoEngine(BaseSearchEngine):
         except Exception as e:
             logger.warning("DuckDuckGo search failed: %s", e)
             return []
+
+
+class GoogleEngine(BaseSearchEngine):
+    """Google search via ddgs library."""
+
+    def __init__(self, timeout: int = 10) -> None:
+        self._timeout = timeout
+
+    async def search(
+        self, query: str, max_results: int = 10
+    ) -> list[dict[str, Any]]:
+        """Search Google and return results."""
+        try:
+            from ddgs import DDGS
+
+            results = DDGS().text(query, max_results=max_results, backend="google")
+            return [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                    "engine": "google",
+                }
+                for r in results
+            ]
+        except Exception as e:
+            logger.warning("Google search failed: %s", e)
+            return []

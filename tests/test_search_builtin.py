@@ -67,3 +67,29 @@ async def test_duckduckgo_engine_handles_error():
             sys.modules["ddgs"] = original_ddgs
         else:
             sys.modules.pop("ddgs", None)
+
+
+@pytest.mark.asyncio
+async def test_google_engine_import():
+    """GoogleEngine should be importable."""
+    from latebra.layers.search_builtin import GoogleEngine
+    assert GoogleEngine is not None
+
+
+@pytest.mark.asyncio
+async def test_google_engine_returns_results():
+    """Google should return search results."""
+    from latebra.layers.search_builtin import GoogleEngine
+
+    engine = GoogleEngine()
+    results = await engine.search("python programming", max_results=3)
+
+    assert isinstance(results, list)
+    assert len(results) > 0
+    assert len(results) <= 3
+
+    for r in results:
+        assert "title" in r
+        assert "url" in r
+        assert "snippet" in r
+        assert r["engine"] == "google"
