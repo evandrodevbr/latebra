@@ -9,7 +9,7 @@
 [![MCP](https://img.shields.io/badge/MCP-1.0+-green.svg)](https://modelcontextprotocol.io)
 [![Tests](https://img.shields.io/badge/tests-149%20passed-brightgreen.svg)](https://github.com/evandrofjs/latebra/actions)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/SearXNG-ready-orange.svg)](#search)
+[![Search](https://img.shields.io/badge/search-built--in%20%2B%20SearXNG-green.svg)](#search)
 
 <br>
 
@@ -27,7 +27,7 @@
 | **3-layer evasion** | ✅ TLS→Browser→Extract | ❌ | ❌ | ❌ |
 | **TLS impersonation** | ✅ curl_cffi (Chrome 120/124) | ❌ | ❌ | ❌ |
 | **Cloudflare bypass** | ✅ testado em produção | ✅ cloud | ✅ cloud | ❌ |
-| **Self-hosted search** | ✅ SearXNG privado | ❌ | ❌ | ❌ |
+| **Self-hosted search** | ✅ SearXNG + built-in fallback | ❌ | ❌ | ❌ |
 | **Proxy rotation** | ✅ circuit breaker | ❌ | ✅ cloud | ❌ |
 | **Browser engines** | ✅ 3 (Patchright/Camoufox/Nodriver) | ❌ 0 | ❌ 0 | ✅ 1 |
 | **Fingerprint spoofing** | ✅ Canvas/WebGL/WebRTC | ❌ | ❌ | ❌ |
@@ -48,12 +48,11 @@ pip install -e ".[all]"
 # Ou via uvx (zero-install)
 uvx latebra
 
-# Start SearXNG (search backend)
-docker run -d --name searxng -p 8090:8080 searxng/searxng:latest
-
-# Run
+# Run — funciona imediatamente SEM search engine configurado
 python -m latebra run
 ```
+
+> 💡 **Sem SearXNG? Sem problema.** O latebra detecta automaticamente se o SearXNG está rodando. Se não estiver, faz fallback transparente para **DuckDuckGo + Google + Bing** via biblioteca nativa `ddgs` — sem container, sem configuração, sem API key.
 
 ### Configure no seu cliente MCP
 
@@ -67,8 +66,8 @@ mcp_servers:
     # Opção 1: usando uvx (recomendado)
     command: uvx
     args: [latebra]
-    env:
-      SEARXNG_URL: http://localhost:8090
+    # Nota: nenhuma env var de search é necessária.
+    # O fallback built-in funciona out-of-the-box.
 
     # Opção 2: usando python direto
     # command: python
@@ -132,7 +131,8 @@ mcp_servers:
 ```
 
 ### `latebra_search`
-**Busca web privada via SearXNG (sem tracking, sem ads, sem rate limit).**
+**Busca web privada via SearXNG com fallback automático para DuckDuckGo/Google/Bing (built-in).**
+**Funciona sem nenhuma configuração — sem SearXNG, sem Docker, sem API key.**
 
 ```json
 // Invocação MCP:
@@ -220,8 +220,13 @@ mcp_servers:
         │                       │                       │
    ┌────▼─────┐          ┌──────▼──────┐         ┌─────▼──────┐
    │  SEARCH  │          │   PIPELINE   │         │   CRAWL    │
-   │ SearXNG  │          │  3 layers    │         │    BFS     │
-   └──────────┘          └──────┬───────┘         └────────────┘
+   │ SearXNG ─║─auto─fallback→ 3 layers  │         │    BFS     │
+   │  ║       │          └──────┬───────┘         └────────────┘
+   │  ▼       │                    │
+   │ Built-in │                    │
+   │DDG/Google│                    │
+   │  /Bing   │                    │
+   └──────────┘                    │
                                 │
             ┌───────────────────┼───────────────────┐
             │                   │                   │
@@ -342,12 +347,23 @@ export CAPSOLVER_API_KEY="CAP-..."     # Capsolver
 export TWOCAPTCHA_API_KEY="abc123..."  # 2Captcha
 ```
 
-### SearXNG (Search Backend)
+### SearXNG (Search Backend — Opcional)
+
+O latebra funciona **sem nenhum search engine configurado**. Por padrão (`auto`), ele:
+
+1. Tenta conectar no SearXNG em `http://localhost:8090`
+2. Se não encontrar, faz **fallback automático** para **DuckDuckGo + Google + Bing** via biblioteca `ddgs`
+3. Você também pode forçar `built-in` com `LATEBRA_SEARCH_BACKEND=built-in` para pular a detecção
+
+Para quem quiser máximas privacidade e zero tracking, recomenda-se rodar SearXNG local:
+
 ```bash
 docker run -d --name searxng -p 8090:8080 searxng/searxng:latest
-# Configure o endpoint:
+# Configure o endpoint (opcional — default já é localhost:8090):
 export SEARXNG_URL="http://localhost:8090"
 ```
+
+> 🛡️ Com SearXNG, você usa os mesmos engines (Google, DDG, Bing, Qwant) sem expor seu IP ou cookies de tracking.
 
 ---
 
@@ -423,7 +439,8 @@ pip install -e ".[all,dev]"
 
 | Variável | Descrição | Default |
 |---|---|---|
-| `SEARXNG_URL` | URL do SearXNG | `http://localhost:8090` |
+| `LATEBRA_SEARCH_BACKEND` | Modo de busca: `auto` (fallback), `searxng`, `built-in` | `auto` |
+| `SEARXNG_URL` | URL do SearXNG (opcional — só usado se `auto` detectar ou `searxng` forçado) | `http://localhost:8090` |
 | `PROXY_LIST` | Lista de proxies (vírgula) | — |
 | `CAPSOLVER_API_KEY` | API key Capsolver | — |
 | `TWOCAPTCHA_API_KEY` | API key 2Captcha | — |

@@ -125,6 +125,8 @@ pip install -e .
 pip install -e ".[all]"
 ```
 
+> 💡 **Sem SearXNG? Sem problema.** O latebra faz fallback automático para DuckDuckGo + Google + Bing. Funciona imediatamente sem configuração adicional.
+
 ### Dependências
 
 O projeto é modular. Instale apenas o necessário:
@@ -274,6 +276,8 @@ Nota: Estes serviços são recomendações de terceiros. O latebra não endossa 
 
 ## Variáveis de Ambiente
 
+- `LATEBRA_SEARCH_BACKEND` — Modo de busca: `auto` (fallback), `searxng`, `built-in` (default: `auto`)
+- `SEARXNG_URL` — URL do SearXNG (opcional — fallback automático se não configurado)
 - `CAPSOLVER_API_KEY` — Chave de API do Capsolver para resolução de CAPTCHA
 - `TWOCAPTCHA_API_KEY` — Chave de API do 2Captcha para resolução de CAPTCHA
 - `PROXY_LIST` — Lista de proxies separados por vírgula (formato `protocolo://user:pass@host:porta`)
