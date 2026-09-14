@@ -39,7 +39,9 @@ async def test_search_handles_timeout():
     """Search should handle network errors gracefully."""
     from latebra.layers.search import SearchLayer
 
-    layer = SearchLayer(base_url="http://localhost:9999", timeout=2)
+    # Force the SearXNG backend: with the "auto" default a failed detection
+    # falls back to built-in engines and the call returns results instead.
+    layer = SearchLayer(base_url="http://localhost:9999", timeout=2, search_backend="searxng")
     results = await layer.search("test", max_results=3)
 
     # Should return empty list, not crash

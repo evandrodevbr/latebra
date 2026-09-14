@@ -5,12 +5,19 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_search_layer_auto_detects_searxng():
-    """SearchLayer should detect SearXNG availability."""
+    """SearchLayer should detect SearXNG availability.
+
+    Requires a local SearXNG instance on http://localhost:8090
+    (optional service: docker run -d -p 8090:8080 searxng/searxng).
+    Skips when the service is not running.
+    """
     from latebra.layers.search import SearchLayer
 
-    # With running SearXNG
     layer = SearchLayer(base_url="http://localhost:8090", search_backend="auto")
-    assert await layer._detect_searxng() is True
+    detected = await layer._detect_searxng()
+    if not detected:
+        pytest.skip("SearXNG is not running at http://localhost:8090")
+    assert detected is True
 
 
 @pytest.mark.asyncio

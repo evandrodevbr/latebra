@@ -299,7 +299,13 @@ async def serve() -> None:
     logger.info("Logs at: %s", get_log_path())
 
     mcp_server = Server("latebra")
-    latebra = LatebraServer()
+    config = LatebraConfig.from_env()
+    latebra = LatebraServer(
+        proxies=config.proxies or None,
+        two_captcha_key=config.two_captcha_key,
+        capsolver_key=config.capsolver_key,
+        config=config,
+    )
 
     @mcp_server.list_tools()
     async def list_tools() -> list[Tool]:

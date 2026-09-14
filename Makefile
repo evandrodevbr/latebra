@@ -85,13 +85,3 @@ run: install ## Inicia o servidor MCP
 
 run-verbose: install ## Inicia com logging DEBUG
 	LATEBRA_LOG_LEVEL=DEBUG $(PYTHON) -m latebra.server
-
-# ── Docker ───────────────────────────────────────
-docker-build: ## Constrói imagem Docker
-	docker build -t latebra:latest .
-
-docker-run: ## Roda servidor MCP no Docker
-	docker run -i --rm \
-		-e LATEBRA_PROXIES="$${LATEBRA_PROXIES:-}" \
-		-e LATEBRA_2CAPTCHA_KEY="$${LATEBRA_2CAPTCHA_KEY:-}" \
-		latebra:latest

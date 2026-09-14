@@ -26,7 +26,7 @@ echo ""
 VERSION="${LATEBRA_VERSION:-0.2.0}"
 INSTALL_DIR="${LATEBRA_HOME:-$HOME/.latebra}"
 VENV_DIR="$INSTALL_DIR/venv"
-REPO_URL="${LATEBRA_REPO:-https://github.com/evandrofjs/latebra.git}"
+REPO_URL="${LATEBRA_REPO:-https://github.com/evandrodevbr/latebra.git}"
 
 # ── Pre-flight checks ───────────────────────────
 info "Verificando requisitos..."
@@ -63,10 +63,10 @@ source "$VENV_DIR/bin/activate"
 if [ -f "$INSTALL_DIR/pyproject.toml" ]; then
     info "Repositório existente, atualizando via git pull..."
     cd "$INSTALL_DIR"
-    git pull --ff-only origin main 2>/dev/null || true
+    git pull --ff-only origin master 2>/dev/null || true
 else
     info "Clonando latebra v$VERSION..."
-    git clone --branch main "$REPO_URL" "$INSTALL_DIR" 2>/dev/null || \
+    git clone --branch master "$REPO_URL" "$INSTALL_DIR" 2>/dev/null || \
     info "Repo não disponível, instalando via pip..."
 fi
 

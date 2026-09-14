@@ -76,11 +76,11 @@ $RepoDir = Join-Path $InstallDir "repo"
 if (Test-Path (Join-Path $RepoDir "pyproject.toml")) {
     Write-Info "Repositório existente, atualizando via git pull..."
     Push-Location $RepoDir
-    git pull --ff-only origin main 2>$null
+    git pull --ff-only origin master 2>$null
     Pop-Location
 } else {
     Write-Info "Clonando latebra v$Version..."
-    git clone --branch main $RepoUrl $RepoDir 2>$null
+    git clone --branch master $RepoUrl $RepoDir 2>$null
     if (-not (Test-Path (Join-Path $RepoDir "pyproject.toml"))) {
         Write-Info "Repo não disponível, instalando via pip..."
         $RepoDir = $null

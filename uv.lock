@@ -1435,7 +1435,7 @@ requires-dist = [
     { name = "latebra", extras = ["browser"], marker = "extra == 'all'" },
     { name = "latebra", extras = ["dev"], marker = "extra == 'all'" },
     { name = "latebra", extras = ["extraction"], marker = "extra == 'all'" },
-    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "mcp", specifier = ">=1.0.0,<2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "nodriver", marker = "extra == 'browser'", specifier = ">=0.38.0" },
     { name = "patchright", marker = "extra == 'browser'", specifier = ">=1.0.0" },
