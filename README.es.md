@@ -1,5 +1,7 @@
 # latebra
 
+> Aviso: esta traducción puede estar desactualizada. La versión de referencia es el [README en inglés](README.md).
+
 **Servidor MCP anti-bot para web scraping anónimo con pipeline de evasión multicapa.**
 
 latebra combina suplantación de huellas TLS, navegador oculto, simulación de comportamiento humano, rotación de proxies y resolución de CAPTCHAs en un único servidor MCP. Cada capa cuenta con degradación automática: si la solicitud HTTP falla por detección, el pipeline escala a navegador oculto; si el navegador es bloqueado, intenta extracción mediante crawler sin interfaz gráfica -- preservando siempre el máximo anonimato.

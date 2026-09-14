@@ -1,307 +1,232 @@
 # latebra
 
-**MCP server anti-bot para web scraping anônimo com pipeline multi-camadas de evasão.**
+**Servidor MCP para web scraping anti-bot: pipeline de evasão em camadas (TLS impersonation, browsers stealth, extração) rodando 100% local, exposto como ferramentas MCP para agentes de IA.**
 
-latebra combina TLS fingerprinting, browser stealth, simulação comportamental humana, rotação de proxies e resolução de CAPTCHAs em um único servidor MCP. Cada camada opera com fallback automático: se a requisição HTTP falha por detecção, o pipeline escala para browser stealth; se o browser é bloqueado, tenta extração via crawler headless — sempre preservando o máximo de anonimidade.
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-1.x-green.svg)](https://modelcontextprotocol.io)
+[![Testes](https://img.shields.io/badge/testes-163%20passaram%20de%20166-brightgreen.svg)](https://github.com/evandrodevbr/latebra/tree/master/tests)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-purple.svg)](LICENSE)
 
----
+## Sobre
 
-## Pipeline
+Fazer scraping de sites protegidos por sistemas anti-bot (Cloudflare, DataDome, Akamai e similares) normalmente significa pagar uma API de scraping em nuvem ou montar na mão uma pilha de browser com stealth. O latebra junta os dois caminhos em um único servidor MCP local: um cliente MCP (Claude, Cursor, Hermes, qualquer agente compatível) chama ferramentas como `latebra_scrape` ou `latebra_search`, e o servidor decide por requisição se basta uma requisição HTTP com TLS impersonation ou se é preciso um browser stealth.
 
-```
-┌──────────┐    ┌───────────┐    ┌──────────────┐
-│ REQUEST  │───▶│  BROWSER  │───▶│ EXTRACTION   │
-│ curl_cffi │    │ Playwright│    │ Crawl4AI     │
-│ TLS imp.  │    │ + stealth │    │ + regex      │
-└────┬─────┘    └─────┬─────┘    └──────┬───────┘
-     │                │                 │
-     ▼                ▼                 ▼
-┌──────────┐    ┌───────────┐    ┌──────────────┐
-│  PROXY   │    │STEALTH    │    │   CACHE      │
-│ Manager  │    │Fingerprint│    │  SQLite TTL  │
-│ Rotation │    │ + Behavior│    │  Dedup       │
-│ Health   │    │ Canvas    │    │              │
-│ Check    │    │ WebGL     │    │              │
-└──────────┘    └───────────┘    └──────────────┘
-                     │
-                     ▼
-               ┌──────────┐
-               │  CAPTCHA  │
-               │  Solver   │
-               │ 2Captcha  │
-               │ Capsolver │
-               └──────────┘
-```
+O que ele faz:
 
-O pipeline segue uma estratégia de graceful degradation:
+- expõe 8 ferramentas MCP via stdio (scrape, scrape com browser, batch, crawl, busca, interação, checagem de anonimato e caminho dos logs);
+- sobe a pipeline automaticamente: requisição `curl_cffi` com fingerprint TLS de Chrome e, em caso de bloqueio, browsers Patchright, Camoufox ou nodriver;
+- extrai e cacheia conteúdo (Crawl4AI quando instalado, extração nativa caso contrário, cache SQLite com TTL);
+- busca na web via SearXNG local quando disponível, com fallback para DuckDuckGo, Google e Bing pela biblioteca `ddgs`;
+- suporta rotação de proxies com circuit breaker, simulação comportamental e resolução de CAPTCHA via 2Captcha/Capsolver.
 
-1. **Request** — tentativa inicial com `curl_cffi` e impersonação TLS
-2. **Browser** — se detectionado, sobe Playwright com perfil stealth
-3. **Extraction** — extrai o conteúdo com Crawl4AI ou regex de fallback
-4. **Cache** — resultados armazenados em SQLite com TTL configurável
+Tudo roda localmente. Não há dependência de nuvem nem conta em serviço externo.
 
-Módulos auxiliares (proxy, stealth, captcha) operam transversalmente em todas as camadas.
-
----
-
-## Arquitetura
+## Como funciona
 
 ```
-src/latebra/
-│
-├── server.py                # MCP server — tools: scrape, extract, health
-│
-├── pipeline.py              # SmartScrapePipeline — orquestrador com fallback
-│
-├── layers/
-│   ├── request.py           # curl_cffi + impersonação TLS + proxy
-│   ├── browser.py           # Playwright + inicialização stealth
-│   └── extraction.py        # Crawl4AI + regex fallback + cache SQLite TTL
-│
-├── proxy/
-│   └── manager.py           # Rotação de proxies, health check, ban automático
-│
-├── stealth/
-│   ├── fingerprint.py       # Spoofing de Canvas, WebGL, WebRTC
-│   └── behavior.py          # Curvas de Bezier, delays humanos, scroll natural
-│
-└── captcha/
-    └── solver.py            # 2Captcha + Capsolver
+Cliente MCP (JSON-RPC via stdio)
+        |
+        v
+server.py            LatebraServer, 8 ferramentas, despacho por nome
+        |
+        v
+SmartScrapePipeline  decisão por URL, fallback camada a camada
+        |
+        +-- Camada 1: AsyncRequestLayer (curl_cffi, impersonation de Chrome)
+        |       sucesso -> extração + cache SQLite
+        |       falha -> erro de rede terminal? para : Camada 2
+        |
+        +-- Camada 2: AsyncBrowserLayer (Patchright -> Camoufox -> nodriver)
+        |       sucesso -> extração
+        |
+        +-- Camada 3: AsyncExtractionLayer (cache -> Crawl4AI -> nativa)
+        |
+        +-- Apoio: ProxyManager (rotação + circuit breaker),
+                   stealth de fingerprint/comportamento, CaptchaSolver
 ```
 
-### Fluxo de Execução
+A busca tem caminho próprio em duas etapas: o `SearchLayer` testa o SearXNG em `http://localhost:8090`; se responder, a consulta vai para lá, senão cai nos motores nativos (`BuiltInSearchLayer` sobre `ddgs`). A variável `LATEBRA_SEARCH_BACKEND` força `auto` (padrão), `searxng` ou `built-in`.
 
-```
-                  ┌─────────────────┐
-                  │  MCP Client      │
-                  │  (Hermes Agent)  │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │  server.py       │
-                  │  scrape/extract  │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │  pipeline.py     │
-                  │  fallback chain  │
-                  └───┬───┬───┬─────┘
-                      │   │   │
-              ┌───────┘   │   └───────┐
-              ▼           ▼           ▼
-        ┌──────────┐ ┌────────┐ ┌──────────┐
-        │ request  │ │browser │ │extraction│
-        │  curl_   │ │Playwr. │ │Crawl4AI  │
-        │  cffi    │ │stealth │ │+ regex   │
-        └──────────┘ └────────┘ └──────────┘
-              │           │           │
-              └───────────┴───────────┘
-                          │
-                          ▼
-                  ┌─────────────────┐
-                  │   SQLite Cache   │
-                  │   (TTL + dedup)  │
-                  └─────────────────┘
-```
+## Stack
 
----
+| Camada | Escolha |
+|---|---|
+| Runtime | Python 3.12+, assíncrono de ponta a ponta |
+| MCP | SDK `mcp` 1.x (servidor stdio) |
+| HTTP / TLS | `curl_cffi` com perfis de impersonation do Chrome |
+| Browsers (opcional) | Patchright, Camoufox, nodriver |
+| Extração (opcional) | Crawl4AI e extração nativa |
+| Busca | SearXNG (opcional) ou `ddgs` (DuckDuckGo, Google, Bing) |
+| Cache | SQLite com TTL (`~/.cache/latebra`) |
+| Testes / ferramentas | pytest, pytest-asyncio, ruff, mypy |
+| Empacotamento | setuptools, lockfile `uv`, console scripts `latebra` e `latebra-mcp` |
 
-## Instalação
+## Requisitos
+
+- Python 3.12 ou superior (verificado no 3.12.14)
+- `uv` (recomendado) ou `pip`
+- Acesso à internet para scraping real
+- Opcional: Docker (para o SearXNG), proxies, chaves da 2Captcha/Capsolver
+- Para o modo browser: Chrome/Chromium instalado (o nodriver usa o do sistema) ou os browsers stealth baixados pelo `latebra install`
+
+## Início rápido
 
 ```bash
-# Clone o repositório
 git clone https://github.com/evandrodevbr/latebra.git
 cd latebra
 
-# Instale com uv (recomendado)
-uv sync
+# Ambiente virtual + instalação (núcleo + ferramentas de teste)
+uv venv .venv --python 3.12
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+uv pip install -e ".[dev]"
 
-# Ou com pip em modo editável
-pip install -e .
-
-# Com suporte a todos os módulos (browser + extração)
-pip install -e ".[all]"
-```
-
-> 💡 **Sem SearXNG? Sem problema.** O latebra faz fallback automático para DuckDuckGo + Google + Bing. Funciona imediatamente sem configuração adicional.
-
-### Dependências
-
-O projeto é modular. Instale apenas o necessário:
-
-- **Mínimo (MCP):** `pip install -e .`
-- **+ Browser:** `pip install -e ".[browser]"`
-- **+ Extração:** `pip install -e ".[extraction]"`
-- **+ Captcha:** `pip install -e ".[captcha]"`
-- **Completo:** `pip install -e ".[all]"`
-
----
-
-## Uso
-
-### Como MCP Server
-
-```bash
+# Sobe o servidor MCP via stdio
 python -m latebra run
 ```
 
-Configure no seu MCP client (ex.: Hermes Agent, Claude Desktop):
+`uvx latebra` ainda **não funciona**: o pacote não está publicado no PyPI. Instale a partir do repositório.
+
+Para a instalação completa (browsers + extração Crawl4AI):
+
+```bash
+uv pip install -e ".[all,dev]"
+latebra install                  # baixa Chromium do Patchright e binários do Camoufox
+```
+
+O caminho com `pip` funciona igual: `python -m venv .venv && source .venv/bin/activate && pip install -e ".[all,dev]"`.
+
+### Configuração no cliente MCP
+
+Exemplo para qualquer cliente MCP que aceite comando e argumentos (ajuste o caminho do venv):
 
 ```json
 {
   "mcpServers": {
     "latebra": {
-      "command": "python",
-      "args": ["-m", "latebra", "run"],
-      "env": {
-        "PROXY_LIST": "socks5://user:pass@proxy1:1080,socks5://user:pass@proxy2:1080",
-        "CAPSOLVER_API_KEY": "sua_chave_aqui"
-      }
+      "command": "/caminho/para/latebra/.venv/bin/python",
+      "args": ["-m", "latebra", "run"]
     }
   }
 }
 ```
 
-**Ferramentas disponíveis:**
+Ou use o console script instalado pelo wheel: `latebra-mcp` (mesmo servidor stdio).
 
-- `scrape` — scraping inteligente com fallback HTTP → Browser
-- `extract` — extração direta de conteúdo estruturado
-- `health` — verificação de status e nível de anonimato
+Há instaladores avulsos: `install.sh` (Linux/macOS) e `install.ps1` (Windows). Ambos clonam a branch `master` em `~/.latebra` (ajustável com `LATEBRA_HOME`), criam o venv, instalam `.[all]` e registram o servidor no config do Claude Desktop quando ele existe.
 
-### Como Biblioteca Python
+## Ferramentas MCP
 
-```python
-import asyncio
-from latebra.pipeline import SmartScrapePipeline
+Verificadas com um handshake real de `initialize` + `tools/list` contra o wheel empacotado; o servidor reporta exatamente estas 8 ferramentas:
 
-async def main():
-    pipeline = SmartScrapePipeline(
-        proxy_list=["socks5://user:pass@proxy1:1080"],
-        capsolver_key="sua_chave",
-    )
+| Ferramenta | O que faz | Parâmetros |
+|---|---|---|
+| `latebra_scrape` | Executa a pipeline multi-camada para uma URL (requisição primeiro, browser como fallback). | `url` (obrigatório) |
+| `latebra_scrape_with_browser` | Pula a camada de requisição e usa um browser direto. | `url` (obrigatório), `browser` = `patchright` \| `camoufox` \| `nodriver` (padrão `patchright`) |
+| `latebra_batch_scrape` | Scraping de várias URLs em paralelo com limite de concorrência. | `urls` (obrigatório), `max_concurrent` (padrão 5) |
+| `latebra_crawl` | Crawl em largura a partir de uma URL semente, seguindo links. | `url` (obrigatório), `max_depth` (padrão efetivo 2), `max_pages` (padrão efetivo 20) |
+| `latebra_search` | Busca web via SearXNG ou motores nativos. | `query` (obrigatório), `max_results` (padrão 10) |
+| `latebra_interact` | Controla a página do browser: navegar, clicar, digitar. | `action` = `navigate` \| `click` \| `type` (obrigatório), `url`, `selector`, `text` |
+| `latebra_check_anonymity` | Raspa uma página de detecção e reporta os marcadores de bot encontrados na resposta. | `url` (padrão `https://httpbin.org/headers`) |
+| `latebra_get_log_path` | Retorna o caminho absoluto do diretório de logs (para relatar problemas). | nenhum |
 
-    resultado = await pipeline.scrape(
-        url="https://exemplo.com",
-        force_browser=False,     # tenta HTTP primeiro
-        extract_structured=True, # extrai com Crawl4AI
-    )
+As respostas são JSON. O `latebra_scrape` reporta `status`, `layer_used` (`request` ou `browser_*`), `content_length`, `timing_ms`, `title` e um preview do conteúdo.
 
-    print(f"Status: {resultado.status}")
-    print(f"Conteúdo: {resultado.content[:500]}")
-    print(f"Camada usada: {resultado.layer}")
+As ferramentas de browser exigem o extra `[browser]` e um binário de browser; sem isso a pipeline registra o erro da camada e retorna `status: "error"` em vez de quebrar.
 
-asyncio.run(main())
+## CLI
+
+```bash
+latebra --version        # latebra 0.2.0
+latebra run              # inicia o servidor MCP (comando padrão)
+latebra install          # pós-instalação: Chromium do Patchright + binários do Camoufox
 ```
 
----
+## Produção
 
-## Técnicas Implementadas
+Gere o wheel e rode como artefato instalado:
 
-- **TLS Fingerprinting** — impersonação de fingerprints JA3/JA4 via `curl_cffi`
-- **Canvas Fingerprinting** — randomização de ruído no renderizador Canvas 2D
-- **WebGL Fingerprinting** — spoofing de vendor/renderer WebGL
-- **WebRTC Leak Prevention** — desativação de vazamento de IP real
-- **JavaScript Challenges** — bypass de Cloudflare, DataDome e Akamai
-- **Simulação Comportamental** — movimentos de mouse em curvas de Bezier, scroll natural, delays humanos
-- **Proxy Rotation** — rotação automática com health check e ban de proxies lentos
-- **CDP/DevTools Detection** — remoção de flags detectáveis do Chrome DevTools Protocol
-- **Rate Limiting Bypass** — distribuição de requisições entre proxies
-- **Honeypot Detection** — identificação e exclusão de links armadilha
-- **CAPTCHA Resolution** — suporte a 2Captcha e Capsolver com fallback entre serviços
-- **Cache Inteligente** — cache SQLite com TTL configurável e desduplicação
+```bash
+uv build                                   # -> dist/latebra-0.2.0-py3-none-any.whl (+ sdist)
+uv venv /opt/latebra/.venv --python 3.12
+uv pip install --python /opt/latebra/.venv/bin/python dist/latebra-0.2.0-py3-none-any.whl
+/opt/latebra/.venv/bin/python -m latebra run   # ou: latebra-mcp
+```
 
----
+A instalação do wheel foi verificada de ponta a ponta: venv novo, instalação do wheel, handshake `initialize` + `tools/list` retornando as 8 ferramentas e `latebra_get_log_path` respondendo.
 
-## Serviços Recomendados
+Notas de operação:
 
-### Serviços de Proxy
+- o processo fala JSON-RPC em stdin/stdout, feito para ser iniciado pelo cliente MCP, não como daemon;
+- logs ficam em `~/.local/share/latebra/logs` (com rotação; caminho também via `latebra_get_log_path`);
+- o cache SQLite fica em `~/.cache/latebra`;
+- não há imagem Docker publicada nem Dockerfile no repositório;
+- não há release no PyPI ainda; distribua o wheel ou instale a partir do código.
 
-**Webshare** — Proxies residenciais com 10 proxies gratuitos incluídos, planos de datacenter a partir de $2.99/mês.
-- Link: https://www.webshare.io
-- Preço: Residential a partir de $4.50/GB, datacenter a partir de $2.99/mês
-- Ideal para: desenvolvedores e equipes pequenas que precisam de tier gratuito
+## Estrutura do projeto
 
-**IPRoyal** — Proxies residenciais pay-as-you-go sem compromisso mensal, proxies residenciais estáticos disponíveis.
-- Link: https://iproyal.com
-- Preço: Residential a partir de $1.75/GB, estático a partir de $2.40/proxy/mês
-- Ideal para: uso flexível sem contratos de longo prazo
+```
+src/latebra/
+├── server.py          servidor MCP: 8 definições de ferramentas + despacho
+├── pipeline.py        SmartScrapePipeline: decisão por URL
+├── config.py          LatebraConfig.from_env (variáveis LATEBRA_*)
+├── constants.py       limites, user agents, fingerprints, timeouts
+├── layers/
+│   ├── request.py     camada HTTP com curl_cffi
+│   ├── browser.py     camada Patchright / Camoufox / nodriver
+│   ├── extraction.py  cache SQLite + extração
+│   ├── crawler.py     crawler BFS
+│   ├── interact.py    navigate / click / type
+│   ├── search.py      SearXNG com detecção automática e fallback
+│   └── search_builtin.py  motores DuckDuckGo / Google / Bing (ddgs)
+├── proxy/manager.py   rotação + circuit breaker
+├── stealth/           randomização de fingerprint e comportamento
+├── captcha/solver.py  clientes 2Captcha / Capsolver
+├── validation.py      validação de URL contra SSRF (bloqueia faixas privadas)
+├── log_utils.py       logs em arquivo com rotação
+└── install.py         pós-instalação do `latebra install`
+tests/                 suítes unitária, de camadas e de performance (183 testes coletados)
+docs/                  SDD, baseline de performance, planos e specs
+```
 
-**Bright Data** — Maior rede de proxies com 72M+ IPs, gerenciador de proxy empresarial e melhor cobertura geográfica.
-- Link: https://brightdata.com
-- Preço: Residential a partir de aproximadamente $5.04/GB
-- Ideal para: cargas de trabalho empresariais que exigem máxima cobertura
+## Verificação
 
-**Smartproxy** — Pool de 55M+ IPs com dashboard bem projetado e extensões de navegador.
-- Link: https://smartproxy.com
-- Preço: Residential a partir de $3/GB
-- Ideal para: equipes que valorizam facilidade de uso
+Números medidos em 2026-09-14 (Manjaro Linux, Python 3.12.14, repositório em `1f9409e`, `mcp` 1.30.0):
 
-**Proxy-Cheap** — Proxies residenciais e estáticos acessíveis para projetos pequenos e médios.
-- Link: https://proxy-cheap.com
-- Preço: Residential a partir de aproximadamente $3/GB
-- Ideal para: projetos com orçamento limitado e volume moderado
+| Checagem | Comando | Resultado |
+|---|---|---|
+| Import e CLI | `latebra --version` | `latebra 0.2.0` |
+| Handshake MCP | `initialize` + `tools/list` + `latebra_get_log_path` via stdio | OK, 8 ferramentas, chamada respondida |
+| Subconjunto offline | `pytest tests/ -m "not slow" --ignore=tests/performance --ignore=tests/test_search_builtin.py --ignore=tests/test_p0_features.py --ignore=tests/test_layers_search.py` | 113 passaram em 0.92s |
+| Suíte completa | `pytest tests/ -m "not slow"` | 166 selecionados (183 coletados, 17 lentos deselecionados): 163 passaram, 2 falharam, 1 pulado |
+| Build do wheel | `uv build` | `dist/latebra-0.2.0-py3-none-any.whl` gerado e instalado em venv novo |
+| Fallback de browser | testes de batch com páginas pequenas | nodriver dirigiu o Chrome do sistema com sucesso |
+| Lint | `ruff check src/ tests/` | 116 avisos (aberto) |
+| Tipos | `mypy src/` | 45 erros em modo strict (aberto) |
 
-### Resolvedores de CAPTCHA
+Os 2 testes que falharam dependem de buscadores externos: `test_google_engine_returns_results` (o Google não devolveu resultados na rede auditada) e `test_search_latency` (9,5s e 22s medidos contra o limite de 5s, com engines expirando). O teste pulado precisa de um SearXNG rodando em `localhost:8090` (serviço opcional) e se auto-pula quando ausente. Todo o resto passou, incluindo as suítes de crawl, batch, fallback de browser e stealth.
 
-**2Captcha** — Maior cobertura de tipos de CAPTCHA com confiabilidade comprovada em reCAPTCHA, hCaptcha e image captchas.
-- Link: https://2captcha.com
-- Preço: reCAPTCHA v2 a partir de $0.50/1000, reCAPTCHA v3 $1-$3/1000
-- Ideal para: resolução de uso geral com o suporte mais amplo
+## Estado atual e limitações
 
-**Capsolver** — Resolução automática com IA e suporte para Cloudflare Turnstile, hCaptcha e FunCaptcha.
-- Link: https://www.capsolver.com
-- Preço: reCAPTCHA v2 aproximadamente $1/1000
-- Ideal para: tipos modernos de CAPTCHA incluindo Cloudflare Turnstile
+- Sem CI configurada e sem release no PyPI: `uvx latebra` e `pip install latebra` não funcionam; instale do código ou do wheel gerado.
+- A suíte de testes não é hermética. Testes de busca chamam buscadores reais (falham sob rate limit, como observado na auditoria), e os de crawl/batch chamam `httpbin.org`.
+- O `config.py` lê todo o conjunto `LATEBRA_*`, mas o servidor só conecta `LATEBRA_PROXIES`, `LATEBRA_2CAPTCHA_KEY`, `LATEBRA_CAPSOLVER_KEY` e `LATEBRA_SEARCH_BACKEND`. As configurações de cache, stealth e timeout são lidas mas ainda não aplicadas na pipeline.
+- A URL do SearXNG é um padrão fixo (`http://localhost:8090`); não há variável de ambiente para ela, apenas o argumento de construtor `LatebraServer(searxng_url=...)`.
+- O `mcp` está fixado em `>=1.0.0,<2.0.0`: o SDK 2.x removeu a API de servidor `list_tools`/`call_tool` usada aqui, então a 1.x é obrigatória até a migração.
+- Patchright e Camoufox precisam dos binários baixados pelo `latebra install`; só o nodriver funciona com o Chrome do sistema.
+- Dívida de lint e tipos em aberto (116 achados do ruff, 45 erros do mypy strict); nada bloqueia a execução.
+- Os instaladores `install.sh` / `install.ps1` existem mas não foram executados nesta auditoria (instalam em `~/.latebra` e editam o config do Claude Desktop).
+- As traduções em outros idiomas (`README.es.md`, `README.ja.md`, `README.zh.md`) existem e podem estar defasadas em relação a este documento.
 
-**Anti-Captcha** — Preços consistentes com boa documentação de API e extensão de navegador.
-- Link: https://anti-captcha.com
-- Preço: reCAPTCHA v2 $0.50-$2/1000
-- Ideal para: equipes que valorizam APIs bem documentadas
+## Documentação
 
-**CapMonster** — Preços competitivos para reCAPTCHA v2 com velocidades rápidas e extensão Chrome.
-- Link: https://capmonster.cloud
-- Preço: Taxas competitivas para reCAPTCHA v2
-- Ideal para: operações de alto volume que exigem rápida resolução
-
-**DeathByCaptcha** — Serviço estabelecido desde 2010 com resolução OCR para image captchas.
-- Link: https://www.deathbycaptcha.com
-- Preço: reCAPTCHA v2 $1.49/1000
-- Ideal para: projetos que precisam de um provedor maduro e testado pelo tempo
-
-Nota: Estes serviços são recomendações de terceiros. O latebra não endossa nenhum provedor específico. Escolha com base no seu orçamento, volume e região. Todos os serviços listados são opcionais — o latebra funciona sem proxies ou resolvedores de CAPTCHA configurados.
-
----
-
-## Variáveis de Ambiente
-
-- `LATEBRA_SEARCH_BACKEND` — Modo de busca: `auto` (fallback), `searxng`, `built-in` (default: `auto`)
-- `SEARXNG_URL` — URL do SearXNG (opcional — fallback automático se não configurado)
-- `CAPSOLVER_API_KEY` — Chave de API do Capsolver para resolução de CAPTCHA
-- `TWOCAPTCHA_API_KEY` — Chave de API do 2Captcha para resolução de CAPTCHA
-- `PROXY_LIST` — Lista de proxies separados por vírgula (formato `protocolo://user:pass@host:porta`)
-
----
-
-## Créditos
-
-**Autor: Evandro Fonseca Junior**
-
----
+| Documento | Conteúdo |
+|---|---|
+| [`docs/SDD.md`](docs/SDD.md) | Plano spec-driven e componentes |
+| [`docs/PERFORMANCE_BASELINE.md`](docs/PERFORMANCE_BASELINE.md) | Baseline de performance (2026-05-31) |
+| [`docs/superpowers/plans/`](docs/superpowers/plans/) | Planos de implementação (logging, backend de busca) |
+| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Especificações de design |
+| [`AGENTS.md`](AGENTS.md) | Notas de estrutura para agentes de código |
 
 ## Licença
 
-Distribuído sob licença MIT. Consulte o arquivo [LICENSE](LICENSE) para mais informações.
-
----
-
-## Referências
-
-COOK, Garrett, et al. *There's a Hole in the Bucket: Large-Scale Analysis of CAPTCHA Abuse*. 2020.
-
-VASTEL, Antoine. *Modern Fingerprinting Techniques: A Survey*. 2017.
-
-LAPERDRIX, Pierre, et al. *Beauty and the Beast: Diverting Modern Web Browsers from Building Honest Fingerprints*. 2016.
-
-ACAR, Gunes, et al. *The Web Never Forgets: Persistent Tracking Mechanisms in the Wild*. 2014.
+MIT, veja [`LICENSE`](LICENSE). Copyright (c) 2026 Evandro Fonseca Junior.
